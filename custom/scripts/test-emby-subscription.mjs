@@ -18,4 +18,10 @@ assert.equal(Buffer.from(decodeEmbyTrojanHeader(header(env.CF_DOMAIN),hash,env.C
 assert.equal(decodeEmbyTrojanHeader(header(env.CF_DOMAIN).subarray(0,30),hash,env.CF_DOMAIN),null);
 for(const [target,port] of [['example.com',443],['127.0.0.1',443],[env.CF_DOMAIN,80]])assert.throws(()=>decodeEmbyTrojanHeader(header(target,port),hash,env.CF_DOMAIN));
 assert.throws(()=>decodeEmbyTrojanHeader(header(env.CF_DOMAIN),'0'.repeat(56),env.CF_DOMAIN));
+stored=undefined;env.yx='1.1.1.1:443,1.0.0.1:8443';env.p='8.8.8.8:443';
+const initial=await (await worker.fetch(admin(),env)).json();assert.equal(initial.source,'environment');assert.equal(initial.nodes.length,2);assert.equal(initial.p,'8.8.8.8:443');
+const again=await (await worker.fetch(admin(),env)).json();assert.equal(again.nodes[0].id,initial.nodes[0].id);
+await worker.fetch(admin({list:'9.9.9.9:443',mode:'matched'}),env);env.yx='invalid';const override=await (await worker.fetch(admin(),env)).json();assert.equal(override.source,'panel');assert.equal(override.nodes[0].host,'9.9.9.9');
+assert.equal((await worker.fetch(admin({useEnvironment:true}),env)).status,400);assert(stored);
+env.yx='1.1.1.1:443,1.0.0.1:8443';const fallback=await (await worker.fetch(admin({useEnvironment:true}),env)).json();assert.equal(fallback.source,'environment');assert.equal(fallback.nodes[0].id,initial.nodes[0].id);assert.equal(fallback.integration.clientStatus,'unknown');assert(!stored);
 console.log('PASS: subscription auth, stable node IDs, TLS ports, IPv4 validation, no full profile/global rules, token isolation, fixed server-selected relay, Emby-only destination/443 and no fallback.');

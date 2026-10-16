@@ -7,7 +7,9 @@
   "vars": {
     "CF_DOMAIN": "panel.rex-custom.invalid",
     "TUNNEL_DOMAIN": "subscription.rex-custom.invalid",
-    "EMBY_SUB_DOMAIN": "subscription.rex-custom.invalid"
+    "EMBY_SUB_DOMAIN": "subscription.rex-custom.invalid",
+    "yx": "",
+    "p": ""
   },
   "d1_databases": [
     {

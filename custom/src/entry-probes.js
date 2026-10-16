@@ -213,12 +213,17 @@ export const panelControlsMarkup = `<style>
 <label>热连接响应上限 · ms<input id="rexProbeMaxLatency" type="number" min="1" max="10000" value="1000"></label>
 <label>结果排序<select id="rexProbeSort"><option value="speed">下载速度优先</option><option value="latency">热连接响应优先</option></select></label>
 </div><div class="rex-probe-actions"><button type="button" id="rexProbeStop" disabled>停止测速</button><label class="rex-file-button">导入候选文件<input id="rexProbeFile" type="file" accept=".txt,.csv,text/plain"></label><span style="font-size:12px;color:#94a3b8">1 MB/s = 8 Mbps；无需下载程序或切换页面。</span></div>
-<details id="rexEmbySubscription" style="margin-top:14px"><summary>Emby 专用优选订阅 · Surge</summary><p>只允许访问当前 Emby 反代域名的 443 端口，不修改正式 DNS。IP＋端口需支持 TLS / WebSocket；这里保存不代表已通过实际链路测试。</p>
-<label>优选入口（每行 IP/域名:TLS端口）<textarea id="rexSubList" style="width:100%;min-height:80px;color:inherit;background:#0b1725"></textarea></label>
-<label>出站中转<select id="rexSubMode"><option value="matched">绑定所选入口同一 IP:端口（不回落）</option><option value="relay">使用单独的固定中转（不回落）</option></select></label>
-<input id="rexSubRelay" placeholder="固定中转 IP:TLS端口，仅独立中转模式使用" style="width:100%">
+<details id="rexEmbySubscription" open style="margin-top:14px;border:1px solid #138da5;border-radius:10px;padding:16px"><summary>Emby 专用优选订阅 · Surge</summary>
+<p>① 填优选入口和 ProxyIP → ② 保存到订阅 → ③ 在 Surge 添加下面的策略组和 Emby 分流规则。Rex/Emby 继续使用现有反代地址。</p>
+<label style="display:block">订阅更新地址（保密；用于 Surge 策略组 policy-path）<input id="rexSubUrl" readonly autocomplete="off" placeholder="正在读取订阅地址…" style="width:100%;box-sizing:border-box;color:inherit;background:#0b1725;padding:10px"></label>
+<p id="rexSubConnection" role="status" style="color:#94a3b8">正在读取独立订阅服务；仅保存配置不会自动启用本机 Surge 分流。</p>
+<pre id="rexSubPath" style="white-space:pre-wrap;font-size:12px"></pre>
+<label>yx · 优选订阅入口（每行 IP/域名:TLS端口）<textarea id="rexSubList" style="width:100%;min-height:80px;color:inherit;background:#0b1725"></textarea></label>
+<label>p · ProxyIP 使用方式<select id="rexSubMode"><option value="matched">绑定所选入口同一 IP:端口（不回落）</option><option value="relay">使用单独的固定中转（不回落）</option></select></label>
+<label>p · 固定 ProxyIP（仅固定中转模式使用）<input id="rexSubRelay" placeholder="IP:TLS端口" style="width:100%"></label>
 <p style="font-size:12px;color:#94a3b8">绑定同一地址不保证目标观察到的实际出口 IP 相同。普通 CF 优选入口不一定具备出站中转能力；不通时断开，不自动换其它地址。</p>
-<div class="rex-probe-actions"><button id="rexSubLoad" type="button">读取订阅配置</button><button id="rexSubSelected" type="button">填入选中结果</button><button id="rexSubSave" type="button">保存到订阅</button><button id="rexSubCopy" type="button">复制订阅地址</button></div>
+<div class="rex-probe-actions"><button id="rexSubLoad" type="button">读取订阅配置</button><button id="rexSubSelected" type="button">填入选中结果</button><button id="rexSubSave" type="button">保存到订阅</button><button id="rexSubCopy" type="button">复制订阅地址</button><button id="rexSubCopyRules" type="button">复制 Surge 接入规则</button></div>
+<details><summary>Cloudflare 变量 p / yx 与面板配置</summary><p>独立订阅 Worker 支持 p / yx 初始变量。面板保存到 D1 后优先使用面板配置，修改变量不会覆盖已保存列表。下面按钮可切换回 Workers 变量；不修改正式 DNS。</p><pre id="rexSubEnvironment" style="white-space:pre-wrap;font-size:12px"></pre><button id="rexSubUseEnvironment" type="button">使用 Workers 的 p / yx 变量</button></details>
 <pre id="rexSubStatus" style="white-space:pre-wrap;font-size:12px"></pre></details></div>`;
 const panelControlsClient=String.raw`
  const preset=document.getElementById('rexProbePreset');
@@ -372,9 +377,23 @@ export const panelProbeScript = String.raw`<script data-rex-entry-check="measure
  const compareButton=document.getElementById('rexCompareButton');if(compareButton){compareButton.onclick=()=>refreshCurrentEntry();refreshCurrentEntry(true);}
  ${panelControlsClient}
  const input=document.getElementById('customIps');if(input)input.placeholder='Cloudflare IPv4、IP:443 或 CIDR；全部在面板内测速，正式 DNS 仅手动提交';
- let subUrl='';
- async function subscriptionAction(save){const output=document.getElementById('rexSubStatus');try{const body=save?{list:document.getElementById('rexSubList').value,mode:document.getElementById('rexSubMode').value,relay:document.getElementById('rexSubRelay').value}:undefined;const j=await json('/api/emby-subscription',body);if(!j.success)throw Error(j.error||'订阅请求失败');subUrl=j.subscriptionUrl;document.getElementById('rexSubList').value=j.nodes.map(n=>n.host+':'+n.port).join('\n');document.getElementById('rexSubMode').value=j.mode;document.getElementById('rexSubRelay').value=j.relay||'';output.textContent=(save?'已保存，Surge 更新订阅后生效。':'配置已读取。')+'\n仅允许 Emby 反代流量；其它流量不要加入此策略组。\n保存不代表订阅链路已验证；普通 CF 入站 IP 不一定能当出站中转。\n\n手动添加到 Surge（放在现有广泛规则之前；不要替换整份配置）：\n'+j.rules;}catch(e){output.textContent=e.message;}}
- const subLoad=document.getElementById('rexSubLoad');if(subLoad){subLoad.onclick=()=>subscriptionAction(false);document.getElementById('rexSubSave').onclick=()=>subscriptionAction(true);document.getElementById('rexSubSelected').onclick=()=>{const rows=Array.from(document.querySelectorAll('#testTableBody .test-row')).filter(tr=>tr.querySelector('input[type=checkbox]')?.checked&&tr.dataset.verified==='true');if(!rows.length)return notify('请勾选本次测速成功的候选');document.getElementById('rexSubList').value=rows.map(tr=>tr.querySelector('.ip-text').textContent+':443').join('\n');};document.getElementById('rexSubCopy').onclick=async()=>{if(!subUrl)await subscriptionAction(false);if(subUrl){try{await navigator.clipboard.writeText(subUrl);document.getElementById('rexSubStatus').textContent='订阅地址已复制；它包含节点认证信息，请勿公开。';}catch{document.getElementById('rexSubStatus').textContent=subUrl;}}};}
+
+ let subUrl='',subRules='';
+ async function subscriptionAction(save){const output=document.getElementById('rexSubStatus');try{
+ const body=save==='environment'?{useEnvironment:true}:save?{list:document.getElementById('rexSubList').value,mode:document.getElementById('rexSubMode').value,relay:document.getElementById('rexSubRelay').value}:undefined;
+ const j=await json('/api/emby-subscription',body);if(!j.success)throw Error(j.error||'订阅请求失败');subUrl=j.subscriptionUrl;subRules=j.rules;
+ document.getElementById('rexSubUrl').value=subUrl;document.getElementById('rexSubList').value=j.nodes.map(n=>n.host+':'+n.port).join('\n');document.getElementById('rexSubMode').value=j.mode;document.getElementById('rexSubRelay').value=j.relay||'';
+ document.getElementById('rexSubConnection').textContent='独立订阅服务已连接 · '+j.nodes.length+' 条入口 · 当前配置来源：'+(j.source==='environment'?'Workers 变量 p / yx':'面板 D1（优先于 Workers 变量）')+'。Surge 是否导入并命中规则：本页无法自动确认。';
+ document.getElementById('rexSubPath').textContent='实际使用路径：\nRex/Emby → Surge 的 Emby优选策略 → 所选优选入口 → 独立订阅 Worker → '+(j.mode==='relay'?'固定 ProxyIP '+j.relay:'同址 ProxyIP')+' → '+j.target+' → 原 Emby 源站\n未导入订阅或未命中 Emby 分流规则时，仍走原来的访问路径。';
+ document.getElementById('rexSubEnvironment').textContent='Workers yx：'+(j.environment?.yx||'未配置')+'\nWorkers p：'+(j.environment?.p||'未配置')+'\n这些变量只属于独立订阅 Worker；不要填到原反代 Worker。';
+ output.textContent=(save?'已保存，Surge 需要刷新订阅。':'配置已读取。')+'\n以下是 Surge 策略组与 Emby 分流规则片段，不是整份配置。分别放入现有对应段；Emby 规则放在广泛规则之前。其它上网流量保持现有规则。\n\n'+j.rules;return true;
+ }catch(e){document.getElementById('rexSubConnection').textContent='订阅服务读取失败；原反代不受影响。';output.textContent=e.message;return false;}}
+ const subLoad=document.getElementById('rexSubLoad');if(subLoad){subLoad.onclick=()=>subscriptionAction(false);document.getElementById('rexSubSave').onclick=()=>subscriptionAction(true);document.getElementById('rexSubUseEnvironment').onclick=()=>subscriptionAction('environment');
+ document.getElementById('rexSubSelected').onclick=()=>{const rows=Array.from(document.querySelectorAll('#testTableBody .test-row')).filter(tr=>tr.querySelector('input[type=checkbox]')?.checked&&tr.dataset.verified==='true');if(!rows.length)return notify('请勾选本次测速成功的候选');document.getElementById('rexSubList').value=rows.map(tr=>tr.querySelector('.ip-text').textContent+':443').join('\n');};
+ async function copySubscription(rules){if(!subUrl&&!await subscriptionAction(false))return;const text=rules?subRules:subUrl;try{await navigator.clipboard.writeText(text);document.getElementById('rexSubStatus').textContent=(rules?'Surge 接入规则已复制。':'新订阅地址已复制。')+'请在 Surge 中手动添加/更新；本页没有修改你的 Surge 配置。';}catch{document.getElementById('rexSubStatus').textContent=text;}}
+ document.getElementById('rexSubCopy').onclick=()=>copySubscription(false);document.getElementById('rexSubCopyRules').onclick=()=>copySubscription(true);subscriptionAction(false);
+ }
+
 })();
 </script>`;
 

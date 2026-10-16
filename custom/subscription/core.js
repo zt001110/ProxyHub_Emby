@@ -50,7 +50,14 @@ export function parseList(text){
   return {id:crypto.randomUUID(),host:m[1],port};
  });
 }
-async function load(env){const row=await env.DB.prepare('SELECT value FROM app_config WHERE key=?').bind(KEY).first();return row?JSON.parse(row.value):{nodes:[],relay:'',mode:'matched'};}
+async function environmentConfig(env){
+ const text=String(env.yx||'').split(/[\n,]+/).map(line=>line.split('#')[0].trim()).filter(Boolean).join('\n');
+ const nodes=text?parseList(text):[];
+ for(const node of nodes){const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('emby-sub-v1|'+node.host+':'+node.port));const hex=[...new Uint8Array(bytes)].map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,32);node.id=hex.slice(0,8)+'-'+hex.slice(8,12)+'-'+hex.slice(12,16)+'-'+hex.slice(16,20)+'-'+hex.slice(20);}
+ const relay=env.p?parseList(String(env.p)):[];if(relay.length>1)throw Error('p 只能配置一个固定 ProxyIP');
+ return {nodes,relay:relay.length?relay[0].host+':'+relay[0].port:'',mode:relay.length?'relay':'matched',source:'environment'};
+}
+async function load(env){const row=await env.DB.prepare('SELECT value FROM app_config WHERE key=?').bind(KEY).first();return row?{...JSON.parse(row.value),source:'panel'}:environmentConfig(env);}
 export function policies(nodes,env){return nodes.map((n,i)=>`Emby优选${String(i+1).padStart(2,'0')} = trojan, ${n.host}, ${n.port}, password=${env.TROJAN_PASSWORD}, sni=${env.TUNNEL_DOMAIN||env.CF_DOMAIN}, ws=true, ws-path=/__emby-sub/ws/${n.id}, ws-headers=Host:${env.TUNNEL_DOMAIN||env.CF_DOMAIN}, skip-cert-verify=false, udp-relay=false, test-url=https://${env.CF_DOMAIN}/assets/regions/us.svg`).join('\n')+'\n';}
 export async function serveEmbySubscription(request,env,ctx){
  env={...env,SUB_TOKEN:env.EMBY_SUB_TOKEN,TROJAN_PASSWORD:env.EMBY_TROJAN_PASSWORD};
@@ -62,13 +69,13 @@ export async function serveEmbySubscription(request,env,ctx){
    let config=await load(env);
    if(request.method==='POST'){
     if(Number(request.headers.get('Content-Length')||0)>12000)throw Error('Payload too large');
-    const raw=await request.text();if(raw.length>12000)throw Error('Payload too large');const body=JSON.parse(raw);const parsed=parseList(body.list),nodes=[...new Map(parsed.map(n=>[n.host+':'+n.port,n])).values()],mode=body.mode==='relay'?'relay':'matched';
+    const raw=await request.text();if(raw.length>12000)throw Error('Payload too large');const body=JSON.parse(raw);if(body.useEnvironment===true){const fallback=await environmentConfig(env);if(!fallback.nodes.length)throw Error('yx 变量未配置');await env.DB.prepare('DELETE FROM app_config WHERE key=?').bind(KEY).run();config=fallback;}else{const parsed=parseList(body.list),nodes=[...new Map(parsed.map(n=>[n.host+':'+n.port,n])).values()],mode=body.mode==='relay'?'relay':'matched';
     const relay=mode==='relay'?parseList(body.relay):[];if(mode==='relay'&&relay.length!==1)throw Error('独立中转地址只能填写一个');
     const old=new Map(config.nodes.map(n=>[n.host+':'+n.port,n.id]));for(const n of nodes)n.id=old.get(n.host+':'+n.port)||n.id;
     config={nodes,mode,relay:relay.length?relay[0].host+':'+relay[0].port:'',updatedAt:new Date().toISOString()};
-    await env.DB.prepare('INSERT INTO app_config(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(KEY,JSON.stringify(config)).run();
+    await env.DB.prepare('INSERT INTO app_config(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(KEY,JSON.stringify(config)).run();config.source='panel';}
    }
-   return json({success:true,...config,diagnostics:Object.fromEntries(embyTunnelFailures),subscriptionUrl:'https://'+(env.EMBY_SUB_DOMAIN||env.CF_DOMAIN)+'/__emby-sub/'+env.SUB_TOKEN+'/surge.list',rules:'[Proxy Group]\nEmby优选 = select, policy-path=https://'+(env.EMBY_SUB_DOMAIN||env.CF_DOMAIN)+'/__emby-sub/'+env.SUB_TOKEN+'/surge.list, update-interval=86400\n\n[Rule]\nDOMAIN,'+env.CF_DOMAIN+',Emby优选\n',target:env.CF_DOMAIN,scope:'Emby only; target port 443; no other destinations; no fallback; actual egress equality not guaranteed'});
+   return json({success:true,...config,yx:config.nodes.map(n=>n.host+':'+n.port).join(','),p:config.mode==='relay'?config.relay:'',environment:{yx:String(env.yx||''),p:String(env.p||'')},integration:{target:env.CF_DOMAIN,transportHost:env.TUNNEL_DOMAIN||env.CF_DOMAIN,requiresSurgeRule:true,clientStatus:'unknown'},diagnostics:Object.fromEntries(embyTunnelFailures),subscriptionUrl:'https://'+(env.EMBY_SUB_DOMAIN||env.CF_DOMAIN)+'/__emby-sub/'+env.SUB_TOKEN+'/surge.list',rules:'[Proxy Group]\nEmby优选 = select, policy-path=https://'+(env.EMBY_SUB_DOMAIN||env.CF_DOMAIN)+'/__emby-sub/'+env.SUB_TOKEN+'/surge.list, update-interval=86400\n\n[Rule]\nDOMAIN,'+env.CF_DOMAIN+',Emby优选\n',target:env.CF_DOMAIN,scope:'Emby only; target port 443; no other destinations; no fallback; actual egress equality not guaranteed'});
   }
   if(u.pathname==='/__emby-sub/'+env.SUB_TOKEN+'/surge.list'&&request.method==='GET'){
    const config=await load(env);if(!config.nodes.length)return new Response('No configured Emby policies',{status:503,headers:{'Cache-Control':'no-store'}});

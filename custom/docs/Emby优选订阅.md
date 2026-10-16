@@ -52,3 +52,23 @@ DOMAIN,你的Emby反代域名,Emby优选
 - 实测仅证明该网络下测试线路能通过内层 TLS 访问 Emby 域名，未代替真实 Surge 导入和视频播放验收。
 
 参考：[yx-tools](https://github.com/byJoey/yx-tools)、[cfnew](https://github.com/byJoey/cfnew)、[Surge Trojan](https://manual.nssurge.com/policies/trojan.html)、[Surge 外部策略列表](https://manual.nssurge.com/policy-groups/policy-including.html)。
+
+## 教程变量与本实现的对应关系（2026-10-16 核对）
+
+本实现是 Emby 专用的独立订阅/受限传输服务，不是完整 cfnew。yx-tools README 明确负责测速并上传 cfnew；其 internal/app/upload.go 使用 /{UUID或路径}/api/preferred-ips。这里没有声称兼容该上传 API；用户继续在反代面板内测速和提交选中结果，不需要本地程序。
+
+- `yx`：独立 Worker 的初始优选入口列表，逗号或换行分隔 IP/域名:TLS端口；环境变量允许忽略 # 后的备注。面板中的“yx · 优选订阅入口”管理同一用途。
+- `p`：独立 Worker 的初始固定 ProxyIP，仅一个 IP/域名:TLS端口。面板固定中转对应该用途。未设置 p 时环境模式使用同址模式，不自动选择其他地址。
+- 优先级：面板 D1 > Workers p/yx；与 cfnew 推荐的持久化配置优先原则一致，但这里使用独立 D1。修改环境变量不会偷偷覆盖已保存节点。需要切回变量时，在面板点击“使用 Workers 的 p / yx 变量”，验证变量有效后才删除面板覆盖。切换后刷新 Surge 订阅，节点 ID 可能改变。
+- `CF_DOMAIN` 是被允许访问的原反代域名；`TUNNEL_DOMAIN` 是独立订阅服务的 TLS SNI/WS Host；`EMBY_SUB_DOMAIN` 提供订阅列表地址。这三个字段用途不同，不应都换成同一域名。
+- `u`、`dkby`、`qj` 等属于 cfnew 的配置约定。这里认证用独立 Secret，协议只生成 TLS Trojan/WS，目标只允许 Emby 域名443且不回落，不需要假填这些变量。
+
+面板现在默认展开订阅区，直接显示订阅更新地址、配置来源、实际流量路径、Workers p/yx 备用值和接入规则，并分别提供复制订阅及复制规则按钮。订阅是 Surge 外部策略列表，不能当完整配置导入覆盖其他规则。
+
+## 实际接入边界与验证
+
+服务端链路：Rex/Emby -> 用户手动配置的 Surge Emby 分流 -> 所选优选入口 -> 独立订阅 Worker -> 固定/同址 ProxyIP -> 原反代域名 -> 原 Emby 源站。不使用 Surge 时仍为原访问路径；保存优选列表不会自动让所有客户端生效，也不会自动改 DNS。
+
+只读脚本 scripts/verify-subscription-emby-readonly.mjs 使用已保存的真实订阅，通过外层 WebSocket/Trojan 和校验证书的内层 TLS 请求现有各条私有反代链接的 System/Info/Public，核对服务器身份；不改配置、不写 DNS、不改 Surge、不播放视频。2026-10-16 已验证 7/7 节点及非 Emby 目标拒绝。此前只验证面板接口的报告不能代替这项结果；真实 Surge 导入和播放仍需在用户设备验收。
+
+源码参考：[yx-tools README](https://github.com/byJoey/yx-tools)、[上传接口实现](https://github.com/byJoey/yx-tools/blob/main/internal/app/upload.go)、[cfnew README](https://github.com/byJoey/cfnew)。仓库指向的文字教程 https://joeyblog.net/yuanchuang/1146.html 本次请求返回404，未声称已经阅读其不可访问内容。
