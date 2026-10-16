@@ -24,11 +24,12 @@ for(const path of ['custom/src/index.js','.github/workflows/hostile.yml','.gitmo
 // Exercise actual git bundles, guarded publishing and atomic branch updates against a disposable bare remote.
 const temp=mkdtempSync(join(tmpdir(),'rex-auto-')),repo=join(temp,'repo'),remote=join(temp,'remote.git'),artifact=join(temp,'artifact');
 const publisher=resolve('scripts/automatic-publish.mjs');
-const git=(...a)=>execFileSync('git',a,{cwd:repo,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
+const fixtureEnv={...process.env,GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_NOSYSTEM:'1'};
+const git=(...a)=>execFileSync('git',a,{cwd:repo,env:fixtureEnv,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
 const commit=()=>{git('add','.');git('-c','user.name=fixture','-c','user.email=fixture@example.invalid','commit','--quiet','-m','fixture');return git('rev-parse','HEAD');};
 try{
  mkdirSync(repo);mkdirSync(artifact);git('init','--quiet');execFileSync('git',['init','--bare','--quiet',remote]);git('remote','add','origin',remote);mkdirSync(join(repo,'custom'));writeFileSync(join(repo,'worker.js'),'old core');writeFileSync(join(repo,'custom/maintenance.json'),JSON.stringify({customBranch:'codex/rex-custom',upstreamBranch:'main'}));const base=commit();git('branch','main');git('branch','codex/rex-custom');git('push','origin','main','codex/rex-custom');
- git('switch','-c','upstream-fixture');writeFileSync(join(repo,'worker.js'),source);const latest=commit();git('switch','-c','codex/automatic-candidate',base);git('merge','--no-ff','--no-commit',latest);
+ git('switch','-c','upstream-fixture');writeFileSync(join(repo,'worker.js'),source);const latest=commit();git('switch','-c','codex/automatic-candidate',base);git('-c','user.name=fixture','-c','user.email=fixture@example.invalid','merge','--no-ff','--no-commit',latest);
  writeFileSync(join(repo,'custom/upstream.lock.json'),JSON.stringify({commit:latest,version:manifest.version,sha256:manifest.sha256}));const candidate=commit();git('bundle','create',join(artifact,'candidate.bundle'),'refs/heads/codex/automatic-candidate');writeFileSync(join(artifact,'manifest.json'),JSON.stringify({...manifest,base,latest,candidate,hasUpdate:true}));git('switch','--detach',base);
  execFileSync(process.execPath,[publisher],{cwd:repo,env:{...process.env,REX_ARTIFACT_DIR:artifact},stdio:'pipe'});
  assert(git('ls-remote','origin','refs/heads/codex/rex-custom').startsWith(candidate));assert(git('ls-remote','origin','refs/heads/main').startsWith(latest));

@@ -55,8 +55,8 @@ jobs:
           npm ci
           npm test
           npm run check:public
-      - name: Package validated source and integration history
-        if: steps.plan.outputs.blocked != 'true'
+      - name: Preserve candidate source and integration history, including failed tests
+        if: always() && steps.plan.outcome == 'success' && steps.plan.outputs.blocked != 'true'
         env:
           REX_ARTIFACT_DIR: ${{ runner.temp }}/automatic-artifact
           HAS_UPDATE: ${{ steps.plan.outputs.hasUpdate }}
@@ -72,6 +72,7 @@ jobs:
           path: ${{ runner.temp }}/automatic-artifact/
           if-no-files-found: ignore
           retention-days: 30
+          overwrite: true
   deploy:
     needs: integrate
     if: needs.integrate.outputs.blocked != 'true'
@@ -111,6 +112,7 @@ jobs:
           path: automatic-report.json
           if-no-files-found: ignore
           retention-days: 90
+          overwrite: true
   publish:
     needs: [integrate, deploy]
     if: needs.integrate.outputs.hasUpdate == 'true' && needs.integrate.outputs.blocked != 'true'

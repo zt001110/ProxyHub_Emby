@@ -27,7 +27,7 @@ export function prepare(root,out,{retryBlocked=false}={}) {
  validateChanges(git('diff','--name-only',lock.commit,latest).split('\n'));
  const bytes=execFileSync('git',['show',latest+':worker.js'],{cwd:root,maxBuffer:8*1024*1024});
  manifest.version=validateVersion(bytes.toString(),lock.version);manifest.coreChanged=sha(bytes)!==lock.sha256;output();
- git('switch','-c','codex/automatic-candidate');git('merge','--no-ff','--no-commit',latest);
+ git('switch','-c','codex/automatic-candidate');git('-c','user.name=rex-update-automation','-c','user.email=rex-update-automation@users.noreply.github.com','merge','--no-ff','--no-commit',latest);
  writeFileSync(resolve(root,'custom/upstream.lock.json'),JSON.stringify({...lock,commit:latest,version:manifest.version,sha256:sha(bytes)},null,2)+'\n');
  git('add','custom/upstream.lock.json');git('-c','user.name=rex-update-automation','-c','user.email=rex-update-automation@users.noreply.github.com','commit','-m','Integrate upstream '+latest.slice(0,12)+' (v'+manifest.version+')');
  manifest.candidate=git('rev-parse','HEAD');manifest.sha256=sha(bytes);output();return manifest;
