@@ -30,7 +30,7 @@ Emby优选 = select, policy-path=面板复制的完整订阅地址, update-inter
 DOMAIN,你的Emby反代域名,Emby优选
 ```
 
-策略列表不含 DIRECT/FINAL 等全局路由规则。订阅域名通过 `EMBY_SUB_DOMAIN` 配置，应与 Emby 分流域名不同，避免策略资源下载依赖其自身节点；现有部署使用独立订阅 Worker 的 workers.dev 入口承载订阅和 WebSocket，原反代域名继续仅承载反代；无需创建优选 DNS 记录。若该入口在某网络不可达，订阅刷新会失败，应使用可达且独立的订阅域名。
+策略列表不含 DIRECT/FINAL 等全局路由规则。订阅域名通过 `EMBY_SUB_DOMAIN` 配置，应与 Emby 分流域名不同，避免策略资源下载依赖其自身节点；现有部署使用独立订阅 Worker 的自定义域名承载订阅和 WebSocket，原反代域名继续仅承载反代；无需创建优选 DNS 记录。若该入口在某网络不可达，订阅刷新会失败，应使用可达且独立的订阅域名。
 
 ## 同址与真实出口
 
@@ -72,3 +72,11 @@ DOMAIN,你的Emby反代域名,Emby优选
 只读脚本 scripts/verify-subscription-emby-readonly.mjs 使用已保存的真实订阅，通过外层 WebSocket/Trojan 和校验证书的内层 TLS 请求现有各条私有反代链接的 System/Info/Public，核对服务器身份；不改配置、不写 DNS、不改 Surge、不播放视频。2026-10-16 已验证 7/7 节点及非 Emby 目标拒绝。此前只验证面板接口的报告不能代替这项结果；真实 Surge 导入和播放仍需在用户设备验收。
 
 源码参考：[yx-tools README](https://github.com/byJoey/yx-tools)、[上传接口实现](https://github.com/byJoey/yx-tools/blob/main/internal/app/upload.go)、[cfnew README](https://github.com/byJoey/cfnew)。仓库指向的文字教程 https://joeyblog.net/yuanchuang/1146.html 本次请求返回404，未声称已经阅读其不可访问内容。
+
+## 当前简化入口
+
+常用界面仅显示订阅地址、节点列表，以及“复制订阅 / 使用测速结果 / 保存节点”。中转、p/yx、配置来源和连接诊断位于默认折叠的高级设置。首次接入说明独立折叠，后续不用重复复制配置。
+
+用户选择的独立域名为 sub.rex-custom.invalid，归属 preferred-ip-subscription 的 Custom Domain。当前完整订阅链接为 https://sub.rex-custom.invalid/<订阅密钥>，需要从面板复制；裸域名不含认证，不能作为订阅。旧 workers.dev 的 /__emby-sub/<密钥>/surge.list 路径仍可读取同一节点列表。原反代域名、节点 ID、认证密码和数据库保持原有值。
+
+Surge 外部资源中的 POLICY-GROUP 下载的是代理节点列表。首次将远程地址加入 Emby 策略组，并设置 Emby 域名使用该组后，日常只需在外部资源中更新；本功能不改用户现有 Surge 文件。参考 https://manual.nssurge.com/policy-groups/policy-including.html 。

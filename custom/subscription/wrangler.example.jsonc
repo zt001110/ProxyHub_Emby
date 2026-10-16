@@ -6,8 +6,8 @@
   "workers_dev": true,
   "vars": {
     "CF_DOMAIN": "panel.rex-custom.invalid",
-    "TUNNEL_DOMAIN": "subscription.rex-custom.invalid",
-    "EMBY_SUB_DOMAIN": "subscription.rex-custom.invalid",
+    "TUNNEL_DOMAIN": "sub.rex-custom.invalid",
+    "EMBY_SUB_DOMAIN": "sub.rex-custom.invalid",
     "yx": "",
     "p": ""
   },
@@ -16,6 +16,12 @@
       "binding": "DB",
       "database_name": "rex-emby-subscription-db",
       "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "routes": [
+    {
+      "pattern": "sub.rex-custom.invalid",
+      "custom_domain": true
     }
   ]
 }
