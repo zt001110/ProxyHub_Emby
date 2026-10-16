@@ -1,4 +1,4 @@
-import { prepareEntryProbes, cleanupEntryProbes, sweepEntryProbes, serveEntryProbe, probePayload, panelProbeScript, currentComparisonMarkup, panelControlsMarkup, serveEmbySubscription } from './entry-probes.js';
+import { prepareEntryProbes, cleanupEntryProbes, sweepEntryProbes, serveEntryProbe, probePayload, panelProbeScript, currentComparisonMarkup, panelControlsMarkup } from './entry-probes.js';
 import upstream from './worker.js';
 import { deployUpdate, updateHealth, updateProtection, updateProtectionScript } from './self-update.js';
 import { regionIcons } from './region-icons.js';
@@ -462,15 +462,14 @@ export default {
   },
   async fetch(request, env, ctx) {
     const path = new URL(request.url).pathname;
-    if(path.startsWith('/__emby-sub/')){
-      return serveEmbySubscription(request,env,ctx);
-    }
     if(path==='/api/emby-subscription'&&['GET','POST'].includes(request.method)){
       const auth=await upstream.fetch(new Request(new URL('/api/me',request.url),{headers:request.headers}),env,ctx);
       if(!auth.ok)return auth;
       if((await auth.json()).role!=='admin')return new Response('Forbidden',{status:403});
-      const headers=new Headers({'Authorization':'Bearer '+env.ADMIN_TOKEN,'Content-Type':'application/json'});
-      try{return await serveEmbySubscription(new Request('https://subscription/admin',{method:request.method,headers,...(request.method==='POST'?{body:await request.text()}:{})}),env,ctx);}catch{return Response.json({success:false,error:'订阅服务调用失败，请稍后重试。'},{status:502});}
+      if(!env.EMBY_SUBSCRIPTION)return Response.json({success:false,error:'独立订阅服务未连接，原反代功能不受影响。'},{status:503});
+      try {const body=request.method==='POST'?await request.text():undefined;if(body&&body.length>12000)return new Response('Payload too large',{status:413});
+        return await env.EMBY_SUBSCRIPTION.fetch(new Request('https://subscription/admin',{method:request.method,headers:{Authorization:'Bearer '+env.ADMIN_TOKEN,'Content-Type':'application/json'},...(body?{body}:{}),signal:AbortSignal.timeout(5000)}));
+      }catch{return Response.json({success:false,error:'独立订阅服务暂不可用，原反代功能不受影响。'},{status:502});}
     }
     if (path.startsWith('/__rex_probe/')) return serveEntryProbe(request, env, isCloudflareIPv4);
     if ((path === '/api/get-dns' && request.method === 'GET') ||

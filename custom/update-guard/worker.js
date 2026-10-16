@@ -21,7 +21,7 @@ async function api(env,path,options={}){
 export async function active(env){const r=await api(env,'/deployments');const d=r.deployments?.[0];if(!d?.versions?.length)throw Error('无法读取当前部署；未更新。');return d;}
 const same=(a,b)=>JSON.stringify([...a].sort((x,y)=>x.version_id.localeCompare(y.version_id)))===JSON.stringify([...b].sort((x,y)=>x.version_id.localeCompare(y.version_id)));
 async function deploy(env,versions,message){return api(env,'/deployments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({strategy:'percentage',versions,annotations:{'workers/message':message}})});}
-async function target(env,path,options={}){return env.TARGET.fetch(new Request('https://panel.rex-custom.invalid'+path,{...options,headers:{Cookie:'admin_token='+env.ADMIN_TOKEN,...options.headers},signal:AbortSignal.timeout(6000)}));}
+async function target(env,path,options={}){return (env.TARGET ? env.TARGET.fetch.bind(env.TARGET) : fetch)(new Request('https://panel.rex-custom.invalid'+path,{...options,headers:{Cookie:'admin_token='+env.ADMIN_TOKEN,...options.headers},signal:AbortSignal.timeout(6000)}));}
 export async function configuration(db){
  const {results:tables}=await db.prepare("SELECT name,sql FROM sqlite_master WHERE type='table' ORDER BY name").all();const out=[];
  for(const t of tables){if(!['routes','app_config','settings','config','users','rex_bot_owner'].includes(t.name))continue;const {results}=await db.prepare('SELECT * FROM "'+t.name+'" LIMIT 10001').all();if(results.length>10000)throw Error('配置快照过大；未执行更新。');out.push({name:t.name,schema:t.sql,rows:results.sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)))});}
@@ -63,10 +63,10 @@ export async function begin(env,form){
 }
 async function rollback(env,j){
  const now=await active(env);const ours=[{version_id:j.candidate,percentage:100}];
- if(same(now.versions,j.before)){j.status='rolled_back';j.events.push({at:Date.now(),stage:'rollback-confirmed'});await save(env.DB,j);return;}
+ if(same(now.versions,j.before)){j.rollbackChecks=await inspect(env,j.baseline);if(j.rollbackChecks.some(x=>!x.passed)){j.status='rollback_failed';j.recoveryError='旧版本已切回，但功能检查尚未通过，将继续重试。';await save(env.DB,j);return;}j.status='rolled_back';j.events.push({at:Date.now(),stage:'rollback-confirmed'});await save(env.DB,j);return;}
  if(!same(now.versions,ours)){j.status='superseded';j.error='检测到其它部署，停止自动回滚，避免覆盖人工更新。';await save(env.DB,j);return;}
  j.status='rolling_back';await save(env.DB,j);
- try{await deploy(env,j.before,'Rex protected update rollback '+j.id);const current=await active(env);if(!same(current.versions,j.before))throw Error('旧版本尚未确认生效。');j.rollbackChecks=await inspect(env,j.baseline);j.status='rolled_back';j.events.push({at:Date.now(),stage:'rollback-confirmed'});delete j.recoveryError;}
+ try{await deploy(env,j.before,'Rex protected update rollback '+j.id);const current=await active(env);if(!same(current.versions,j.before))throw Error('旧版本尚未确认生效。');j.rollbackChecks=await inspect(env,j.baseline);if(j.rollbackChecks.some(x=>!x.passed))throw Error('Rollback health checks failed');j.status='rolled_back';j.events.push({at:Date.now(),stage:'rollback-confirmed'});delete j.recoveryError;}
  catch{j.status='rollback_failed';j.recoveryError='自动回滚尚未确认；独立检查器会再次尝试，请查看故障记录。';}
  await save(env.DB,j);
 }
@@ -78,13 +78,13 @@ export async function advance(env,id,manual=false){
   if(['rolling_back','rollback_failed'].includes(j.status)){await rollback(env,j);return j;}
   if(!['ready','deploying','verifying'].includes(j.status))return j;
   const before=await active(env),ours=[{version_id:j.candidate,percentage:100}];
-  if(j.status==='ready'){if(!same(before.versions,j.before)){j.status='superseded';j.error='部署前发现其它版本已发布，已取消本次更新。';await save(env.DB,j);return j;}j.status='deploying';j.deadline=Date.now()+120000;await save(env.DB,j);try{await deploy(env,ours,'Rex protected update '+j.id);}catch{j.error='部署响应未确认，正在核对实际版本。';}return j;}
+  if(j.status==='ready'){if(!same(before.versions,j.before)){j.status='superseded';j.error='部署前发现其它版本已发布，已取消本次更新。';await save(env.DB,j);return j;}j.status='deploying';j.deadline=Date.now()+300000;await save(env.DB,j);try{await deploy(env,ours,'Rex protected update '+j.id);}catch{j.error='部署响应未确认，正在核对实际版本。';}return j;}
   if(same(before.versions,j.before)){if(Date.now()>j.deadline){j.status='failed_before_deploy';j.error='候选版本未生效，原版本仍在服务。';await save(env.DB,j);}return j;}
   if(!same(before.versions,ours)){j.status='superseded';j.error='检测到其它部署，已停止自动操作。';await save(env.DB,j);return j;}
   j.status='verifying';j.checks=await inspect(env,j.expected);j.attempts=(j.attempts||0)+1;j.events.push({at:Date.now(),stage:'checks',failed:j.checks.filter(x=>!x.passed).map(x=>x.id)});
-  if(j.checks.every(x=>x.passed)){delete j.error;delete j.recoveryError;j.status='passed';j.events.push({at:Date.now(),stage:'verified'});await save(env.DB,j);}
-  else if(Date.now()>=j.deadline){j.error='更新后关键功能检查失败。';await save(env.DB,j);await rollback(env,j);}
-  else await save(env.DB,j);return j;
+  if(j.checks.every(x=>x.passed)){const now=Date.now();j.firstHealthyAt??=now;if(!j.lastHealthyAt||now-j.lastHealthyAt>=30000){j.healthySamples=(j.healthySamples||0)+1;j.lastHealthyAt=now;}if(now-j.firstHealthyAt<60000||(j.healthySamples||0)<3){await save(env.DB,j);return j;}delete j.error;delete j.recoveryError;j.status='passed';j.events.push({at:Date.now(),stage:'verified'});await save(env.DB,j);}
+  else if(Date.now()>=j.deadline){delete j.firstHealthyAt;delete j.lastHealthyAt;j.healthySamples=0;j.error='更新后关键功能检查失败。';await save(env.DB,j);await rollback(env,j);}
+  else {delete j.firstHealthyAt;delete j.lastHealthyAt;j.healthySamples=0;await save(env.DB,j);}return j;
  }catch(e){const j=await load(env.DB,id);if(j&&ACTIVE.includes(j.status)){j.recoveryError=e.message;await save(env.DB,j);}throw e;}finally{await unlock();}
 }
 export async function tick(env){await init(env.DB);const {results}=await env.DB.prepare("SELECT id FROM rex_updates WHERE status IN ('preparing','ready','deploying','verifying','rolling_back','rollback_failed') ORDER BY created LIMIT 1").all();for(const r of results)await advance(env,r.id);}

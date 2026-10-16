@@ -30,7 +30,7 @@ Emby优选 = select, policy-path=面板复制的完整订阅地址, update-inter
 DOMAIN,你的Emby反代域名,Emby优选
 ```
 
-策略列表不含 DIRECT/FINAL 等全局路由规则。订阅域名通过 `EMBY_SUB_DOMAIN` 配置，应与 Emby 分流域名不同，避免策略资源下载依赖其自身节点；现有部署使用原 Worker 已有的 workers.dev 入口承载订阅，无需创建优选 DNS 记录。若该入口在某网络不可达，订阅刷新会失败，应使用可达且独立的订阅域名。
+策略列表不含 DIRECT/FINAL 等全局路由规则。订阅域名通过 `EMBY_SUB_DOMAIN` 配置，应与 Emby 分流域名不同，避免策略资源下载依赖其自身节点；现有部署使用独立订阅 Worker 的 workers.dev 入口承载订阅和 WebSocket，原反代域名继续仅承载反代；无需创建优选 DNS 记录。若该入口在某网络不可达，订阅刷新会失败，应使用可达且独立的订阅域名。
 
 ## 同址与真实出口
 
@@ -38,15 +38,17 @@ DOMAIN,你的Emby反代域名,Emby优选
 
 目标最终观察到的出口还受中转实现、Cloudflare 任播和现有 Emby Worker 回源路径影响，**不能保证等于所选 IP**。独立中转模式会明确使用不同的固定中转地址，也不会假称入口出口一致。网页下载测速通过、保存配置、生成订阅均不等于订阅转发实测通过。
 
-## 安全、备份与维护
+## 独立架构、安全与维护
 
-- `/api/emby-subscription` 的读取/保存需要现有管理员会话；外部订阅路径用独立随机口令，Trojan 使用另一随机密码。订阅包含节点认证信息，不得公开。
-- 配置存于现有 D1 `app_config` 的 `rex_emby_subscription_v1`，被现有更新保护配置快照覆盖；编辑列表无需发布 Worker。认证保存在 Secret 中，不放入 D1 配置或 Git。
-- 生产 Secret：`EMBY_SUB_TOKEN`、`EMBY_TROJAN_PASSWORD`、`EMBY_TROJAN_HASH`。最后一项为密码的 SHA-224 十六进制。更换密码时两者同步更新；更换订阅口令会使旧订阅地址失效。
-- 代码位于 `src/index.js`（入口/管理员鉴权）和 `src/entry-probes.js`（面板、存储、订阅、受限传输），现有多模块更新会保留两者。没有新运行时模块或生产依赖需要手动追加。
-- 实现采用本项目的受限传输模块；cfnew 只作为功能与协议研究参考，未将其完整程序并入运行时。未使用的独立服务原型已移除，研究源码和临时凭据只保存在本机忽略的私有备份。
-- 单元测试 `scripts/test-emby-subscription.mjs` 覆盖认证、稳定线路 ID、端口/地址约束、策略格式、密码与目标域名/端口拒绝。
-- 本机私有 `scripts/verify-emby-subscription-live.mjs` 可通过实际 WebSocket/Trojan/内层 HTTPS 校验链路及禁止非 Emby 目标；不改 Surge。该脚本会临时保存待测订阅配置，维护时注意恢复用户列表，测试报告在私有 verification/。
-- 首次安装需配置上述 Secret；已有服务不要重新生成覆盖。常规作者更新仍由用户点面板按钮触发，没有每小时任务。
+- 原反代 Worker 只增加面板控件和管理员接口 `/api/emby-subscription`。它通过 `EMBY_SUBSCRIPTION` 服务绑定调用独立订阅 Worker，超时或异常返回局部错误。首页、反代、测速、Telegram 和更新流程不请求订阅服务；原反代不包含 TCP/WebSocket 传输代码。
+- 独立 Worker 的 `subscription/worker.js` 静态导入 Cloudflare `connect`，受限传输和订阅在 `subscription/core.js`。独立 D1 保存 `app_config.rex_emby_subscription_v1`，无原反代数据库、DNS 或更新器权限。只允许目标 `CF_DOMAIN:443`，SNI/Host 使用独立的 `TUNNEL_DOMAIN`，两者不能混用。
+- 面板读取/保存需要现有管理员会话；服务间请求使用管理员认证。订阅路径用独立随机口令，Trojan 使用另一随机密码。订阅含认证信息，不得公开。
+- 独立服务 Secret：`ADMIN_TOKEN`、`EMBY_SUB_TOKEN`、`EMBY_TROJAN_PASSWORD`、`EMBY_TROJAN_HASH`。最后一项为密码 SHA-224；更换密码时同步更新哈希，更换订阅口令会使旧链接失效。原反代不需要订阅密码。
+- 编辑节点列表只写入订阅数据库，不发布代码、不改 DNS。测速通过不等于订阅链路通过，需实际验证。
+- 原作者更新仍通过原有多模块保护层，保留面板管理入口和服务绑定，不更新独立订阅代码。只有用户点更新才启动，没有每小时自动执行。
+- 独立服务后续更新使用 `npm run deploy:subscription`：先记录当前部署版本、代码、绑定设置并导出独立数据库，然后发布并重复检查健康和管理接口；失败自动切回旧代码并检查恢复。数据库配置保持当前值，避免代码回滚覆盖用户近期编辑。
+- 单独备份：`npm run backup:subscription`；回滚：`node scripts/manage-subscription.mjs rollback 私有备份目录`。需配套私有 `subscription/wrangler.jsonc` 和现有 Wrangler 登录。初次安装先配置数据库和 Secret，不能对未配置实例使用维护部署命令。数据库 SQL 仅在确认需要恢复配置时单独导入，绝不导入原反代数据库。
+- 单元测试覆盖认证、稳定节点 ID、目标/端口限制及服务失败隔离。私有实际链路脚本验证 WebSocket/Trojan/内层 TLS 和非 Emby 目标拒绝，不改 Surge；脚本会保存测试节点配置，应在维护时使用并恢复用户列表。
+- 实测仅证明该网络下测试线路能通过内层 TLS 访问 Emby 域名，未代替真实 Surge 导入和视频播放验收。
 
 参考：[yx-tools](https://github.com/byJoey/yx-tools)、[cfnew](https://github.com/byJoey/cfnew)、[Surge Trojan](https://manual.nssurge.com/policies/trojan.html)、[Surge 外部策略列表](https://manual.nssurge.com/policy-groups/policy-including.html)。

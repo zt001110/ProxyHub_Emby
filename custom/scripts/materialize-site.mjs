@@ -16,7 +16,7 @@ const files=execFileSync('git',['ls-files','-z','--','custom'],{cwd:root,encodin
 mkdirSync(output,{recursive:true,mode:0o700});
 for(const file of files){const target=join(output,file);mkdirSync(dirname(target),{recursive:true,mode:0o700});const text=readFileSync(join(root,file),'utf8');writeFileSync(target,text.replace(regex,value=>replacements[value]),{mode:0o600});}
 copyFileSync(join(root,'worker.js'),join(output,'worker.js'));
-for(const name of ['wrangler.jsonc','update-guard/wrangler.jsonc']){const target=join(output,'custom',name);mkdirSync(dirname(target),{recursive:true,mode:0o700});copyFileSync(join(privateDir,name),target);}
+for(const name of ['wrangler.jsonc','update-guard/wrangler.jsonc','subscription/wrangler.jsonc']){if(name.startsWith('subscription/')&&!existsSync(join(privateDir,name)))continue;const target=join(output,'custom',name);mkdirSync(dirname(target),{recursive:true,mode:0o700});copyFileSync(join(privateDir,name),target);}
 for(const name of ['admin-credentials.txt','deployment-private.json']){if(existsSync(join(privateDir,name)))symlinkSync(join(privateDir,name),join(output,'custom',name));}
 const revision=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();writeFileSync(join(output,'RELEASE.json'),JSON.stringify({revision,preparedAt:new Date().toISOString(),deployed:false,configurationCopiedFromPrivateDeployment:true},null,2)+'\n',{mode:0o600});
 console.log('Prepared private release: '+output+'\nRun npm ci && npm test inside its custom/ directory. Production was not changed.');

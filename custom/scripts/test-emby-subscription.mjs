@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
-import {serveEmbySubscription,parseList,policies,decodeEmbyTrojanHeader} from '../src/entry-probes.js';
+import {serveEmbySubscription,parseList,policies,decodeEmbyTrojanHeader} from '../subscription/core.js';
 import {createHash} from 'node:crypto';
 const worker={fetch:serveEmbySubscription};
 let stored;const env={ADMIN_TOKEN:'fixture-admin',SUB_TOKEN:'a'.repeat(48),TROJAN_PASSWORD:'b'.repeat(48),u:'fixture-uuid',CF_DOMAIN:'panel.example.invalid',DB:{prepare(sql){return {bind(...args){return {async first(){return stored?{value:stored}:null},async run(){stored=args[1];return {success:true}}}}}}}};
-env.EMBY_SUB_TOKEN=env.SUB_TOKEN;env.EMBY_TROJAN_PASSWORD=env.TROJAN_PASSWORD;
+env.TUNNEL_DOMAIN='subscription.example.invalid';env.EMBY_SUB_TOKEN=env.SUB_TOKEN;env.EMBY_TROJAN_PASSWORD=env.TROJAN_PASSWORD;
 const admin=(body,token=env.ADMIN_TOKEN)=>new Request('https://service/admin',{method:body?'POST':'GET',headers:{Authorization:'Bearer '+token},...(body?{body:JSON.stringify(body)}:{})});
 assert.equal((await worker.fetch(admin(null,'bad'),env)).status,401);
 assert.equal((await worker.fetch(new Request('https://service/__emby-sub/'+env.SUB_TOKEN+'/surge.list'),env)).status,503);
 for(const list of ['127.0.0.1:443','10.1.1.1:443','172.16.1.1:443','100.64.0.1:443','https://1.1.1.1','1.1.1.1:80','1.1.1.1:443#x\nInjected','1.1.1.999:443'])assert.throws(()=>parseList(list));
 let config=await (await worker.fetch(admin({list:'108.162.198.1:443\n154.83.2.231:2087',mode:'matched'}),env)).json();assert.equal(config.nodes.length,2);const id=config.nodes[0].id;
 config=await (await worker.fetch(admin({list:'108.162.198.1:443\n154.83.2.231:2087',mode:'matched'}),env)).json();assert.equal(config.nodes[0].id,id);
-const sub=await worker.fetch(new Request(config.subscriptionUrl),env);const body=await sub.text();assert(body.includes(', 2087,'));assert(body.includes('ws=true'));assert(!body.includes('[General]')&&!body.includes('FINAL,'));assert(!body.includes(env.ADMIN_TOKEN));assert.equal(sub.headers.get('cache-control'),'no-store');
+const sub=await worker.fetch(new Request(config.subscriptionUrl),env);const body=await sub.text();assert(body.includes(', 2087,'));assert(body.includes('ws=true'));assert(body.includes('sni=subscription.example.invalid'));assert(body.includes('ws-headers=Host:subscription.example.invalid'));assert(body.includes('/assets/regions/us.svg'));assert(!body.includes('test-url=https://panel.example.invalid/api/version'));assert(!body.includes('[General]')&&!body.includes('FINAL,'));assert(!body.includes(env.ADMIN_TOKEN));assert.equal(sub.headers.get('cache-control'),'no-store');
 assert.equal((await worker.fetch(new Request(config.subscriptionUrl.replace(env.SUB_TOKEN,'wrong')),env)).status,404);
 const hash=createHash('sha224').update(env.TROJAN_PASSWORD).digest('hex');
 function header(target,port=443){const h=Buffer.from(target);return Buffer.concat([Buffer.from(hash+'\r\n'),Buffer.from([1,3,h.length]),h,Buffer.from([port>>8,port&255,13,10]),Buffer.from('payload')]);}

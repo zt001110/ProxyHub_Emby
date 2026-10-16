@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+import {readFileSync} from 'node:fs';
+const built=await build({entryPoints:['src/index.js'],bundle:true,format:'esm',platform:'browser',loader:{'.txt':'text'},write:false,logLevel:'silent'});
+assert(!built.outputFiles[0].text.includes('cloudflare:sockets'));
+const worker=(await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].text).toString('base64'))).default;
+let calls=0;const env={ADMIN_TOKEN:'test-admin',EMBY_SUBSCRIPTION:{fetch(){calls++;throw Error('Independent service offline');}}};
+const req=(path,auth=true)=>new Request('https://panel.rex-custom.invalid'+path,{headers:auth?{Cookie:'admin_token=test-admin'}:{}});
+assert.equal((await worker.fetch(req('/api/emby-subscription',false),env,{})).status,401);assert.equal(calls,0);
+assert.equal((await worker.fetch(req('/api/emby-subscription'),env,{})).status,502);assert.equal(calls,1);
+assert.equal((await worker.fetch(req('/api/version'),env,{})).status,200);assert.equal(calls,1);
+assert.equal((await worker.fetch(req('/api/emby-subscription'),{ADMIN_TOKEN:'test-admin'},{})).status,503);
+const main=readFileSync('src/index.js','utf8');assert(!main.includes('serveEmbySubscription'));
+console.log('PASS: subscription outage is contained, admin authentication enforced, main version API stays available, no socket transport inside panel bundle.');

@@ -1,0 +1,19 @@
+{
+  "name": "rex-emby-subscription",
+  "account_id": "00000000000000000000000000000000",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-15",
+  "workers_dev": true,
+  "vars": {
+    "CF_DOMAIN": "panel.rex-custom.invalid",
+    "TUNNEL_DOMAIN": "subscription.rex-custom.invalid",
+    "EMBY_SUB_DOMAIN": "subscription.rex-custom.invalid"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "rex-emby-subscription-db",
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ]
+}
