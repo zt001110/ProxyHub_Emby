@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {sourceVersion} from './check-deploy-version.mjs';
+import {readFileSync} from 'node:fs';
+import {DatabaseSync} from 'node:sqlite';
+import {build} from 'esbuild';
+const built=await build({entryPoints:['src/index.js'],bundle:true,format:'esm',platform:'browser',loader:{'.txt':'text'},write:false,logLevel:'silent'});
+const worker=(await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].text).toString('base64'))).default;
+const sqlite=new DatabaseSync(':memory:');sqlite.exec("CREATE TABLE routes (prefix TEXT);INSERT INTO routes VALUES ('jp');CREATE TABLE app_config (key TEXT,value TEXT);INSERT INTO app_config VALUES ('secret','private-value');");
+const DB={prepare(sql){let values=[];return {bind(...v){values=v;return this;},async all(){return {results:sqlite.prepare(sql).all(...values)};}};}};
+const env={DB,ADMIN_TOKEN:'test-admin',TG_BOT_TOKEN:'bot',TG_WEBHOOK_SECRET:'webhook',CF_DNS_API_TOKEN:'dns',CF_ANALYTICS_TOKEN:'analytics'};
+const req=auth=>new Request('https://panel.rex-custom.invalid/api/update-health',{headers:auth?{Cookie:'admin_token=test-admin'}:{}});
+assert.equal((await worker.fetch(req(false),env,{})).status,401);
+const r=await worker.fetch(req(true),env,{});assert.equal(r.status,200);const h=await r.json();assert.equal(h.version,sourceVersion(readFileSync('src/worker.js','utf8')));assert.match(h.adapter,/^[a-f0-9]{64}$/);assert(h.database&&h.ownerBinding&&h.dnsBinding&&h.analyticsBinding);assert(!JSON.stringify(h).includes('private-value'));
+sqlite.exec("UPDATE app_config SET value='changed'");const after=await (await worker.fetch(req(true),env,{})).json();assert.notEqual(after.configHash,h.configHash);assert.equal(after.adapter,h.adapter);
+console.log('PASS: live adapter health dispatch, admin authentication, upstream version, preserved module fingerprint, private configuration digest and credential values never returned.');

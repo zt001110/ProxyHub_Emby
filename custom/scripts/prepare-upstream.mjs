@@ -1,0 +1,12 @@
+import {readFile,writeFile,mkdir} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+const root=new URL('../../',import.meta.url),base=new URL('../',import.meta.url);
+const source=await readFile(new URL('worker.js',root),'utf8'),lock=JSON.parse(await readFile(new URL('upstream.lock.json',base)));
+const hash=createHash('sha256').update(source).digest('hex');
+if(hash!==lock.sha256)throw Error('作者核心与 upstream.lock.json 不一致；请先通过 upstream:sync 合并、审查并更新锁定记录，未生成部署源码。');
+const version=source.match(/const\s+CURRENT_VERSION\s*=\s*["'](\d+\.\d+\.\d+)["']/)?.[1];if(version!==lock.version)throw Error('作者版本与锁定记录不一致。');
+let count=0;
+const patched=source.includes('arguments[1].REX_ORIGIN_FETCH || fetch')?source:source.replace(/(\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*new Request\([^;]{1,400}?\),\s*[A-Za-z_$][\w$]*\s*=\s*await\s+)fetch\(\2\)/g,(_,before,name)=>{count++;return before+'(arguments[1].REX_ORIGIN_FETCH || fetch)('+name+')';});
+if(count!==1&&!source.includes('arguments[1].REX_ORIGIN_FETCH || fetch'))throw Error('作者回源结构变化，请先核对补丁；未生成新部署源码。');
+await mkdir(new URL('src/',base),{recursive:true});await writeFile(new URL('src/worker.js',base),patched);
+console.log('Prepared pinned upstream v'+version+' with the isolated origin observer patch.');

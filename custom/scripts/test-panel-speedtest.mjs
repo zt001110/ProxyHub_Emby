@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import {readFileSync} from 'node:fs';
+import {probeClientSource,panelControlsMarkup,panelProbeScript,candidatesFromInput} from '../src/entry-probes.js';
+const validate=ip=>ip.startsWith('172.64.')&&ip.split('.').every(n=>Number(n)<=255);
+assert.equal(candidatesFromInput('172.64.79.192:443',validate)[0].ip,'172.64.79.192');
+assert.throws(()=>candidatesFromInput('172.64.79.192:8443',validate),/443/);
+assert(!panelProbeScript.includes('window.open'));assert(!panelControlsMarkup.includes('127.0.0.1'));assert(panelControlsMarkup.includes('rexProbePreset'));assert(panelControlsMarkup.includes('rexProbeStop'));assert(!readFileSync('src/index.js','utf8').includes('/api/direct-test-ticket'));
+let now=0;const received=[],progress=[],sandbox={performance:{now:()=>now},AbortController,setTimeout:()=>1,clearTimeout(){},fetch:async()=>({ok:true,headers:new Headers({'X-Rex-Probe-IP':'172.64.79.192'}),body:{getReader(){let chunk=0;return{async read(){if(chunk++>=4)return{done:true};now+=250;received.push(1024);return{done:false,value:new Uint8Array(1024)};}}}}})};
+vm.runInNewContext(probeClientSource+';this.sample=probeSample;this.stop=()=>{probeCancelled=true;for(const c of probeControllers)c.abort();};',sandbox);
+const result=await sandbox.sample({ip:'172.64.79.192',url:'https://probe.example/test'},4096,5000,(n,p)=>progress.push({n,...p}));
+assert.equal(result.bytes,4096);assert.equal(result.bodyMs,1000);assert.equal(progress.length,4);assert.deepEqual(progress.map(p=>p.percent),[25,50,75,100]);assert.equal(result.Mbps,4096*8/1e6);assert.equal(received.length,4);
+sandbox.stop();await assert.rejects(()=>sandbox.sample({url:'https://probe.example/'},4096),e=>e.name==='AbortError');assert.equal(received.length,4);
+let shortNow=0;const partial={performance:{now:()=>shortNow+=100},AbortController,setTimeout:()=>1,clearTimeout(){},fetch:async()=>({ok:true,headers:new Headers({'X-Rex-Probe-IP':'172.64.79.192'}),arrayBuffer:async()=>new ArrayBuffer(1024)})};vm.runInNewContext(probeClientSource+';this.sample=probeSample;',partial);await assert.rejects(()=>partial.sample({ip:'172.64.79.192',url:'https://probe.example/'},4096),/数据不完整/);
+const instant={performance:{now:()=>100},AbortController,setTimeout:()=>1,clearTimeout(){},fetch:async()=>({ok:true,headers:new Headers({'X-Rex-Probe-IP':'172.64.79.192'}),arrayBuffer:async()=>new ArrayBuffer(2048)})};vm.runInNewContext(probeClientSource+';this.sample=probeSample;',instant);const tiny=await instant.sample({ip:'172.64.79.192',url:'https://probe.example/'},2048);assert.equal(tiny.bodyMs,0);assert.equal(tiny.Mbps,0);assert.equal(tiny.bytes,2048);
+console.log('PASS: panel-only workflow, explicit IP:443 validation, no native window/ticket route, real chunk-by-chunk progress, full-body timing/units, cancellation blocks further downloads, incomplete transfer never produces a valid speed.');

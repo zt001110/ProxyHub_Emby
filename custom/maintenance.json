@@ -1,0 +1,6 @@
+{
+  "fork": "zt001110/ProxyHub_Emby",
+  "upstream": "MakkaPakka518/ProxyHub_Emby",
+  "upstreamBranch": "main",
+  "customBranch": "codex/rex-custom"
+}

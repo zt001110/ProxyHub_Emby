@@ -1,0 +1,31 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "rex-emby-update-guard",
+  "account_id": "00000000000000000000000000000000",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-15",
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "CF_ACCOUNT_ID": "00000000000000000000000000000000",
+    "CF_WORKER_NAME": "rex-emby-proxy"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "rex-emby-proxy-db",
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "services": [
+    {
+      "binding": "TARGET",
+      "service": "rex-emby-proxy"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "* * * * *"
+    ]
+  }
+}

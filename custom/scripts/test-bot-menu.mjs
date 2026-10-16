@@ -1,0 +1,13 @@
+import assert from'node:assert/strict';import{build}from'esbuild';import{mkdtemp}from'node:fs/promises';import{tmpdir}from'node:os';import{join}from'node:path';import{pathToFileURL}from'node:url';
+const out=join(await mkdtemp(join(tmpdir(),'rex-bot-menu-')),'worker.mjs');await build({entryPoints:['src/index.js'],bundle:true,format:'esm',platform:'browser',loader:{'.txt':'text'},outfile:out,logLevel:'silent'});const{default:worker}=await import(pathToFileURL(out));let owner=null,sent=[];const env={TG_BOT_TOKEN:'test',TG_WEBHOOK_SECRET:'test-secret',TG_PAIRING_CODE:'one-use-code',DB:{async exec(){},prepare(sql){return{bind(value){this.value=value;return this},async run(){if(!owner)owner=this.value;return{}},async first(){return owner?{chat_id:owner}:null},async all(){return{results:[{prefix:'jp',remark:'日本<测试>'}]}}}}}};
+const request=(id,text,callback=false)=>new Request('https://panel.rex-custom.invalid/api/tg-webhook',{method:'POST',headers:{'X-Telegram-Bot-Api-Secret-Token':'test-secret'},body:JSON.stringify(callback?{callback_query:{id:'callback-test',from:{id},data:text,message:{chat:{id,type:'private'}}}}:{message:{from:{id},chat:{id,type:'private'},text}})});const real=globalThis.fetch;globalThis.fetch=async(url,opt)=>{assert(String(url).startsWith('https://api.telegram.org/'));sent.push({method:String(url).split('/').at(-1),...JSON.parse(opt.body)});return Response.json({ok:true,result:{}})};
+try{
+ await worker.fetch(request(7,'/start wrong-code'),env,{});assert.equal(owner,null);assert.equal(sent.length,0);
+ assert.equal((await worker.fetch(request(7,'/start one-use-code'),env,{})).status,200);assert.equal(owner,'7');assert(sent.at(-1).text.includes('私人管家'));assert(sent.at(-1).reply_markup.inline_keyboard.flat().some(x=>x.callback_data==='usage'));
+ await worker.fetch(request(8,'/start one-use-code'),env,{});assert.equal(owner,'7');assert.equal(sent.length,1);
+ await worker.fetch(request(7,'nodes',true),env,{});assert.equal(sent.at(-2).method,'answerCallbackQuery');assert(sent.at(-1).text.includes('日本&lt;测试&gt;'));assert(!sent.at(-1).text.includes('test-secret'));assert(!sent.at(-1).text.includes('one-use-code'));
+ const before=sent.length;await worker.fetch(request(8,'usage',true),env,{});assert.equal(sent.length,before);
+ await worker.fetch(request(7,'/status'),env,{});assert(sent.at(-1).text.includes('未验证各源站登录和播放'));
+ await worker.fetch(request(7,'/help@other_bot'),env,{});assert.equal(sent.length,before+1);
+ console.log('PASS: private owner pairing, failed-code silence, binding cannot be replaced, callback ownership/ack, HTML escaping, safe menu, no secrets, truthful status.');
+}finally{globalThis.fetch=real;}

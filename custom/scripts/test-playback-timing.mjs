@@ -1,0 +1,9 @@
+import assert from 'node:assert/strict';import {build} from 'esbuild';
+const built=await build({entryPoints:['src/index.js'],bundle:true,format:'esm',platform:'browser',loader:{'.txt':'text'},write:false,logLevel:'silent'});
+const worker=(await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].text).toString('base64'))).default;
+const route={prefix:'test-node',target:'https://origin.example',mode:'off',cache_img:'off',redirect_direct:'off'};
+const DB={async exec(){},async batch(statements){assert(statements.every(s=>s.original));return[];},prepare(sql){return{original:true,bind(){return this;},async first(){return /FROM\s+routes/i.test(sql)?route:null;},async all(){return {results:/FROM\s+routes/i.test(sql)?[route]:[]};},async run(){return{};},async raw(){return[];}};}};
+const originalFetch=globalThis.fetch,originalLog=console.log;const logs=[];let reached=false;
+globalThis.fetch=async(url)=>{reached=true;return Response.json({MediaSources:[]});};console.log=value=>logs.push(value);
+try{const request=new Request('https://panel.rex-custom.invalid/test-node/Items/item/PlaybackInfo',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});const r=await worker.fetch(request,{ADMIN_TOKEN:'test-admin',DB},{waitUntil(){}});assert.equal(r.status,200);assert(reached);const trace=JSON.parse(logs.find(v=>v.includes('rex-playback-timing')));assert.equal(trace.stage,'response-headers');assert.equal(trace.status,200);assert(trace.dbCompleted.length>0);assert(!JSON.stringify(trace).includes('test-admin'));assert(!JSON.stringify(trace).includes('origin.example'));}finally{globalThis.fetch=originalFetch;console.log=originalLog;}
+console.log('PASS: playback timing preserves D1 statement/batch behavior and proxy response, logs no account or media URL.');

@@ -1,0 +1,10 @@
+{
+  "deploymentDirectory": "/absolute/path/to/your/private-deployment",
+  "replacements": {
+    "fast.rex-custom.invalid": "fast.example.com",
+    "panel.rex-custom.invalid": "panel.example.com",
+    "legacy.rex-custom.invalid": "legacy.example.com",
+    "rex_custom_example_bot": "your_example_bot",
+    "rex-custom.invalid": "example.com"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "repository": "MakkaPakka518/ProxyHub_Emby",
+  "branch": "main",
+  "commit": "5f1f169487b826de5b826f44e34cab6b6e3b4209",
+  "path": "worker.js",
+  "version": "3.4.6",
+  "sha256": "17c0770c3b92abecd7fbdd5941b48eff43d410e5ffecc0eb2a708f6d65c29433",
+  "patch": "request-scoped-origin-observer-v1"
+}

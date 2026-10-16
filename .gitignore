@@ -1,0 +1,16 @@
+.DS_Store
+**/node_modules/
+**/.wrangler/
+**/.dev.vars*
+**/.env*
+**/backups/
+**/verification/
+**/admin-credentials.txt
+**/deployment-private.json
+**/site.local.json
+**/wrangler.jsonc
+**/routes.json
+**/*.sql
+custom/src/*-source.txt
+custom/src/worker.js
+custom/private-releases/

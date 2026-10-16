@@ -1,0 +1,52 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "rex-emby-proxy",
+  "account_id": "00000000000000000000000000000000",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-15",
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "CF_ACCOUNT_ID": "00000000000000000000000000000000",
+    "CF_WORKER_NAME": "rex-emby-proxy",
+    "CF_ZONE_ID": "00000000000000000000000000000000",
+    "CF_DOMAIN": "panel.rex-custom.invalid"
+  },
+  "rules": [
+    {
+      "type": "Text",
+      "globs": [
+        "**/*-source.txt"
+      ],
+      "fallthrough": true
+    }
+  ],
+  "routes": [
+    {
+      "pattern": "panel.rex-custom.invalid/*",
+      "zone_name": "rex-custom.invalid"
+    },
+    {
+      "pattern": "*.rex-custom.invalid/__rex_probe/*",
+      "zone_name": "rex-custom.invalid"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "rex-emby-proxy-db",
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "*/5 * * * *"
+    ]
+  },
+  "services": [
+    {
+      "binding": "UPDATE_GUARD",
+      "service": "rex-emby-update-guard"
+    }
+  ]
+}
