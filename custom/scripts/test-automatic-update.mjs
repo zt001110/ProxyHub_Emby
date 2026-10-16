@@ -34,5 +34,6 @@ try{
  execFileSync(process.execPath,[publisher],{cwd:repo,env:{...process.env,REX_ARTIFACT_DIR:artifact},stdio:'pipe'});
  assert(git('ls-remote','origin','refs/heads/codex/rex-custom').startsWith(candidate));assert(git('ls-remote','origin','refs/heads/main').startsWith(latest));
  const stale=spawnSync(process.execPath,[publisher],{cwd:repo,env:{...process.env,REX_ARTIFACT_DIR:artifact},encoding:'utf8'});assert.notEqual(stale.status,0);assert.match(stale.stderr,/branch changed/);
+ writeFileSync(join(artifact,'manifest.json'),JSON.stringify({base:candidate,latest,hasUpdate:false}));execFileSync(process.execPath,[publisher],{cwd:repo,env:{...process.env,REX_ARTIFACT_DIR:artifact,REX_VERIFY_PUBLICATION:'true'},stdio:'pipe'});assert(git('ls-remote','origin','refs/heads/codex/rex-custom').startsWith(candidate));
 }finally{rmSync(temp,{recursive:true,force:true});}
 console.log('PASS: automatic update integrity, adapter drift, active recovery, rollback/timeout/lost-response stops, no duplicate deployment, protected-path refusal, bundle publishing and stale-branch refusal.');

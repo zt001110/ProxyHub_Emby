@@ -115,7 +115,7 @@ jobs:
           overwrite: true
   publish:
     needs: [integrate, deploy]
-    if: needs.integrate.outputs.hasUpdate == 'true' && needs.integrate.outputs.blocked != 'true'
+    if: needs.integrate.outputs.blocked != 'true' && (needs.integrate.outputs.hasUpdate == 'true' || inputs.validate_current || inputs.exercise_deployment)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -137,6 +137,7 @@ jobs:
       - name: Publish validated history without running candidate code
         env:
           GH_TOKEN: ${{ github.token }}
+          REX_VERIFY_PUBLICATION: ${{ needs.integrate.outputs.hasUpdate != 'true' }}
         run: node custom/scripts/automatic-publish.mjs
   record-failure:
     needs: [integrate, deploy, publish]

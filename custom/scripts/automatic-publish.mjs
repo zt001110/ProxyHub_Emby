@@ -7,6 +7,13 @@ import {validateChanges} from './automatic-integration.mjs';
 const dir=resolve(process.env.REX_ARTIFACT_DIR||'automatic-artifact'),m=JSON.parse(readFileSync(resolve(dir,'manifest.json')));
 const cfg=JSON.parse(readFileSync('custom/maintenance.json'));
 const git=(...a)=>execFileSync('git',a,{encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
+if(!m.hasUpdate&&process.env.REX_VERIFY_PUBLICATION==='true'){
+ for(const k of ['base','latest'])if(!/^[a-f0-9]{40}$/.test(m[k]))throw Error('Invalid verification revision.');
+ if(git('ls-remote','origin','refs/heads/'+cfg.customBranch).split(/\s/)[0]!==m.base)throw Error('Maintained branch changed; verification stopped.');
+ git('merge-base','--is-ancestor',m.latest,m.base);
+ git('-c','credential.helper=','-c','credential.helper=!gh auth git-credential','push','--dry-run','--atomic','origin',m.base+':refs/heads/'+cfg.customBranch,m.latest+':refs/heads/'+cfg.upstreamBranch);
+ console.log('Verified repository publication authentication with a dry run; no refs changed.');process.exit(0);
+}
 for(const k of ['base','latest','candidate'])if(!/^[a-f0-9]{40}$/.test(m[k]))throw Error('Invalid artifact revision.');
 if(!m.hasUpdate||m.blocked)throw Error('Artifact is not publishable.');
 git('fetch','--no-tags',resolve(dir,'candidate.bundle'),'refs/heads/codex/automatic-candidate');if(git('rev-parse','FETCH_HEAD')!==m.candidate)throw Error('Bundle revision mismatch.');
