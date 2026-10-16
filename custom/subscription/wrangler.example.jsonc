@@ -1,5 +1,5 @@
 {
-  "name": "rex-emby-subscription",
+  "name": "preferred-ip-subscription",
   "account_id": "00000000000000000000000000000000",
   "main": "worker.js",
   "compatibility_date": "2026-10-15",

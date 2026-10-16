@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
-  "name": "rex-emby-update-guard",
+  "name": "update-protection",
   "account_id": "00000000000000000000000000000000",
   "main": "worker.js",
   "compatibility_date": "2026-10-15",
@@ -8,7 +8,7 @@
   "preview_urls": false,
   "vars": {
     "CF_ACCOUNT_ID": "00000000000000000000000000000000",
-    "CF_WORKER_NAME": "rex-emby-proxy"
+    "CF_WORKER_NAME": "emby-proxy"
   },
   "d1_databases": [
     {

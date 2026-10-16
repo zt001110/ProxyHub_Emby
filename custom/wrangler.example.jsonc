@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "rex-emby-proxy",
+  "name": "emby-proxy",
   "account_id": "00000000000000000000000000000000",
   "main": "src/index.js",
   "compatibility_date": "2026-10-15",
@@ -8,7 +8,7 @@
   "preview_urls": false,
   "vars": {
     "CF_ACCOUNT_ID": "00000000000000000000000000000000",
-    "CF_WORKER_NAME": "rex-emby-proxy",
+    "CF_WORKER_NAME": "emby-proxy",
     "CF_ZONE_ID": "00000000000000000000000000000000",
     "CF_DOMAIN": "panel.rex-custom.invalid"
   },
@@ -46,11 +46,11 @@
   "services": [
     {
       "binding": "UPDATE_GUARD",
-      "service": "rex-emby-update-guard"
+      "service": "update-protection"
     },
     {
       "binding": "EMBY_SUBSCRIPTION",
-      "service": "rex-emby-subscription"
+      "service": "preferred-ip-subscription"
     }
   ]
 }
