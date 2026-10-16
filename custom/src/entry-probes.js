@@ -146,7 +146,7 @@ export async function serveEntryProbe(request,env,validate){
  return probePayload(request,{...headers,'X-Rex-Probe-IP':ip});
 }
 
-export const currentComparisonMarkup = '<tr id="rexCurrentCompare" style="background:rgba(0,160,255,.09)"><td style="text-align:center"><input type="checkbox" disabled aria-label="当前入口对比，不参与 DNS 提交"></td><td><strong>panel.rex-custom.invalid</strong><div style="color:#38bdf8;margin-top:5px">当前入口对比</div></td><td id="rexCompareLatency">待测</td><td id="rexCompareSpeed">等待测速…</td><td><div id="rexCompareDns">读取当前解析…</div><small id="rexDnsAction" style="display:block;margin-top:6px;color:#94a3b8">DNS 缓存可能影响当前连接。</small></td><td><button type="button" id="rexCompareButton" class="btn-small">重测当前入口</button></td></tr>';
+export const currentComparisonMarkup = '<tr id="rexCurrentCompare" style="background:rgba(0,160,255,.09)"><td style="text-align:center"><input type="checkbox" disabled aria-label="当前入口对比，不参与订阅保存"></td><td><strong>panel.rex-custom.invalid</strong><div style="color:#38bdf8;margin-top:5px">当前入口对比</div></td><td id="rexCompareLatency">待测</td><td id="rexCompareSpeed">等待测速…</td><td><div id="rexCompareDns">读取当前解析…</div><small id="rexDnsAction" style="display:block;margin-top:6px;color:#94a3b8">DNS 缓存可能影响当前连接。</small></td><td><button type="button" id="rexCompareButton" class="btn-small">重测当前入口</button></td></tr>';
 
 
 // All entry points use one bounded queue. No raw-IP HTTPS or fabricated timing.
@@ -214,10 +214,10 @@ export const panelControlsMarkup = `<style>
 <label>结果排序<select id="rexProbeSort"><option value="speed">下载速度优先</option><option value="latency">热连接响应优先</option></select></label>
 </div><div class="rex-probe-actions"><button type="button" id="rexProbeStop" disabled>停止测速</button><label class="rex-file-button">导入候选文件<input id="rexProbeFile" type="file" accept=".txt,.csv,text/plain"></label><span style="font-size:12px;color:#94a3b8">1 MB/s = 8 Mbps；无需下载程序或切换页面。</span></div>
 <details id="rexEmbySubscription" open style="margin-top:14px;border:1px solid #138da5;border-radius:10px;padding:16px;scroll-margin-top:88px"><summary style="font-weight:600">Emby 优选订阅 <span id="rexSubConnection" role="status" style="font-size:12px;font-weight:400;color:#94a3b8"></span></summary>
-<p style="font-size:13px;color:#94a3b8">保存节点后，在 Surge 更新订阅即可。</p>
+<p style="font-size:13px;color:#94a3b8">勾选测速通过的节点并保存到订阅，再在 Surge 更新。直连保持默认 Cloudflare 入口。</p>
 <label style="display:block;font-size:13px">订阅地址</label><div style="display:flex;gap:8px;align-items:center;margin:6px 0 16px"><input id="rexSubUrl" readonly autocomplete="off" aria-label="订阅地址" placeholder="读取中…" style="flex:1;min-width:0;box-sizing:border-box;color:inherit;background:#0b1725;padding:10px;font-size:12px"><button id="rexSubCopy" type="button" style="white-space:nowrap">复制订阅</button></div>
 <label style="display:block;font-size:13px">节点（每行 IP:端口）<textarea id="rexSubList" aria-label="优选节点列表" style="display:block;box-sizing:border-box;width:100%;min-height:80px;margin-top:6px;padding:10px;border:1px solid #28485a;border-radius:8px;color:inherit;background:#0b1725"></textarea></label>
-<div class="rex-probe-actions"><button id="rexSubSelected" type="button">使用测速结果</button><button id="rexSubSave" type="button" style="background:#0782a0;color:white">保存节点</button><span id="rexSubStatus" role="status" aria-live="polite" style="font-size:12px;color:#94a3b8"></span></div>
+<div class="rex-probe-actions"><button id="rexSubSelected" type="button">保存选中到订阅</button><button id="rexSubSave" type="button" style="background:#0782a0;color:white">保存节点</button><span id="rexSubStatus" role="status" aria-live="polite" style="font-size:12px;color:#94a3b8"></span></div>
 <details id="rexSubSetup" style="margin-top:16px;font-size:13px"><summary>首次接入 Surge</summary><p>在策略组中添加远程订阅地址，刷新后即可加载节点。Emby 域名分流首次设置一次，后续只需更新订阅。</p><button id="rexSubCopyRules" type="button">复制首次接入配置</button><pre id="rexSubRules" style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px"></pre></details>
 <details id="rexSubAdvanced" style="margin-top:12px;font-size:13px"><summary>高级设置</summary><p id="rexSubSource" style="color:#94a3b8"></p>
 <label>中转方式<select id="rexSubMode"><option value="matched">使用与入口相同的地址</option><option value="relay">指定固定中转</option></select></label><label>固定 ProxyIP<input id="rexSubRelay" placeholder="IP:TLS端口" style="width:100%;box-sizing:border-box"></label><p style="font-size:12px;color:#94a3b8">入口与实际出口可能不同；连接失败时不会自动切换中转。</p>
@@ -264,7 +264,7 @@ export const panelProbeScript = String.raw`<script data-rex-entry-check="measure
   const stop=document.getElementById('rexProbeStop');if(stop)stop.disabled=false;
   const button=document.getElementById('rexCompareButton'),dns=document.getElementById('rexCompareDns'),speed=document.getElementById('rexCompareSpeed'),latency=document.getElementById('rexCompareLatency');button.disabled=true;
   currentPromise=(async()=>{
-   try{const data=await json('/api/get-dns');const records=(data.result||[]).filter(r=>['A','AAAA','CNAME'].includes(r.type));dns.textContent='Cloudflare 当前配置：'+(records.map(r=>r.type+' '+r.content).join('、')||'无地址记录');}
+   try{const data=await json('/api/get-dns');const records=(data.result||[]).filter(r=>['A','AAAA','CNAME'].includes(r.type));dns.textContent=records.some(r=>r.proxied)?'默认 Cloudflare 入口（自动解析）':'Cloudflare 当前配置：'+(records.map(r=>r.type+' '+r.content).join('、')||'无地址记录');}
    catch(e){dns.textContent='当前解析读取失败：'+e.message;}
    speed.textContent='当前入口测速中…';latency.textContent='待测';
    try{if(quickOnly){const ms=await warmConnection({url:'/api/network-probe',control:true},text=>speed.textContent=text);latency.textContent=ms+' ms 热连接';speed.textContent='点右侧按钮测下载速度';return;}const result=await queuedMeasurement({url:'/api/network-probe',control:true,onLatency:ms=>latency.textContent=ms+' ms 热连接'},(text,p)=>transferProgress(speed,text,p));latency.textContent=result.latencyMs+' ms 热连接';speed.textContent=speedLabel(result);speed.title='数据传输计时 '+result.bodyMs.toFixed(1)+' ms；本次下载端到端 '+result.totalMs.toFixed(1)+' ms；延迟为 3 次热连接响应中位数。';}
@@ -276,7 +276,7 @@ export const panelProbeScript = String.raw`<script data-rex-entry-check="measure
  function rowFor(item){const tr=document.createElement('tr');tr.className='test-row';tr.dataset.verified='false';tr.dataset.resultState='pending';
   const cb=document.createElement('input');cb.type='checkbox';cb.className='ip-checkbox row-checkbox';cb.value=item.ip;cb.disabled=true;const first=document.createElement('td');first.appendChild(cb);tr.appendChild(first);
   for(const cls of ['ip-text','latency','speed','loc']){const td=document.createElement('td');td.className=cls;td.textContent=cls==='ip-text'?item.ip:cls==='latency'?'待测':cls==='speed'?'等待测试':item.sampledFrom?'网段抽样 '+item.sampledFrom:'临时测速解析 / 独立下载';tr.appendChild(td);}
-  const last=document.createElement('td'),btn=document.createElement('button');btn.className='btn-dns';btn.textContent='唯一解析';btn.disabled=true;btn.onclick=()=>updateSingleDns(item.ip,btn);const retry=document.createElement('button');retry.className='rex-probe-retest';retry.textContent='重测';retry.disabled=busy||!!item.error;retry.dataset.inputValid=String(!item.error);retry.style.cssText='margin-right:8px;border:1px solid #168ba6;border-radius:6px;background:transparent;color:#38bdf8;padding:6px 10px;cursor:pointer';retry.onclick=()=>retestSingle(item.ip,tr);last.appendChild(retry);last.appendChild(btn);tr.appendChild(last);return tr;
+  const last=document.createElement('td'),btn=document.createElement('button');btn.className='btn-dns';btn.textContent='加入订阅';btn.disabled=true;btn.onclick=()=>saveMeasuredSubscription([item.ip],btn,true);const retry=document.createElement('button');retry.className='rex-probe-retest';retry.textContent='重测';retry.disabled=busy||!!item.error;retry.dataset.inputValid=String(!item.error);retry.style.cssText='margin-right:8px;border:1px solid #168ba6;border-radius:6px;background:transparent;color:#38bdf8;padding:6px 10px;cursor:pointer';retry.onclick=()=>retestSingle(item.ip,tr);last.appendChild(retry);last.appendChild(btn);tr.appendChild(last);return tr;
  }
  function compareMeasured(a,b){if(document.getElementById('rexProbeSort')?.value==='latency')return Number(a.dataset.latencyMs)-Number(b.dataset.latencyMs)||Number(a.dataset.seconds)-Number(b.dataset.seconds);return Number(a.dataset.seconds)-Number(b.dataset.seconds)||Number(a.dataset.latencyMs)-Number(b.dataset.latencyMs);}
  function groupResults(){
@@ -360,23 +360,30 @@ export const panelProbeScript = String.raw`<script data-rex-entry-check="measure
  fetchRemoteAndTest=()=>run(async()=>{const j=await json('/api/get-remote-ips?type='+encodeURIComponent(document.getElementById('ipType').value));if(!j.ips?.length)throw Error('预设源没有返回候选');return {inputs:j.ips.slice(0,512)};});
  fetchCustomApiAndTest=()=>run(async()=>{const value=document.getElementById('customApiUrl').value.trim();if(!value)throw Error('请填写 API 地址');const j=await json('/api/get-custom-api-ips?url='+encodeURIComponent(value));if(!j.ips?.length)throw Error('API 没有返回候选');return {inputs:j.ips.slice(0,512)};});
  doLocalPing=(ip,tr)=>retestSingle(ip,tr);
- sendDnsRequest=async function(ips,button){
-  if(busy)return notify('请等待本批测速与临时解析清理结束，再提交 DNS。');
-  if(!ips.length||ips.some(ip=>!verified.has(ip)))return notify('请选择本次测速成功的 IPv4；失败或未验证的地址不能提交。');
-  const action=document.getElementById('rexDnsAction'),text=button.textContent;button.disabled=true;button.textContent='更新 DNS 中…';if(action)action.textContent='正在提交 DNS 修改…';
-  try{const result=await json('/api/update-dns',{ips});if(action)action.textContent='DNS 已更新为：'+ips.join('、')+'；正在刷新当前入口对比。';showToast(result.message||'DNS 更新成功');show('DNS 已手动更新；下方保留的是提交前的候选测速结果。');if(typeof loadDNS==='function')Promise.resolve().then(()=>loadDNS()).catch(()=>{});await currentPromise;await refreshCurrentEntry();if(action)action.textContent='DNS 已更新为：'+ips.join('、')+'。当前入口已重测，请留意 DNS 缓存。';}
-  catch(e){if(action)action.textContent='DNS 更新或刷新失败：'+e.message;notify('DNS 操作提示：'+e.message);}
-  finally{button.disabled=false;button.textContent=text;}
- };
- updateTop3ToDns=function(){const rows=Array.from(document.querySelectorAll('#testTableBody .test-row')).filter(tr=>tr.dataset.verified==='true').sort(compareMeasured);const ips=rows.slice(0,3).map(tr=>tr.querySelector('.ip-text').textContent);if(!ips.length)return notify('没有测速成功的地址，请先完成测速');if(confirm('将 panel.rex-custom.invalid 手动更新为以下 IP？多条记录不会自动按运营商选路。\n'+ips.join('\n')))sendDnsRequest(ips,document.getElementById('btnTop3Dns'));};
- directSubmitCname=function(){notify('第三方 CNAME 尚未核验，当前仅支持测速成功的 Cloudflare IPv4。');};
+ // Block cached legacy handlers as well as removing their visible controls.
+ sendDnsRequest=async function(){notify('正式 DNS 保持默认入口，请将测速结果保存到订阅。');};
+ updateTop3ToDns=function(){notify('请勾选测速通过的节点，再保存到订阅。');};
+ updateSelectedToDns=function(){return saveSelectedSubscription(document.getElementById('btnSelectedDns'));};
+ updateSingleDns=function(ip,button){return saveMeasuredSubscription([ip],button,true);};
+ directSubmitCname=function(){notify('订阅模式不修改正式 DNS。');};
  const clearOriginal=clearTest;clearTest=function(){if(busy)return notify('测试进行中，请等待当前任务结束');clearOriginal();};
- for(const id of ['btnTop3Dns','btnSelectedDns']){const b=document.getElementById(id);if(b){b.disabled=false;b.title='手动提交后修改 panel.rex-custom.invalid 的 DNS';}}
+ for(const id of ['btnTop3Dns','btnDirectCname']){const b=document.getElementById(id);if(b){b.hidden=true;b.disabled=true;}}
+ const selectedSubscriptionButton=document.getElementById('btnSelectedDns');if(selectedSubscriptionButton){selectedSubscriptionButton.onclick=()=>saveSelectedSubscription(selectedSubscriptionButton);selectedSubscriptionButton.title='将勾选且测速通过的节点保存到订阅，不修改正式 DNS';}
  const compareButton=document.getElementById('rexCompareButton');if(compareButton){compareButton.onclick=()=>refreshCurrentEntry();refreshCurrentEntry(true);}
  ${panelControlsClient}
- const input=document.getElementById('customIps');if(input)input.placeholder='Cloudflare IPv4、IP:443 或 CIDR；全部在面板内测速，正式 DNS 仅手动提交';
+ const input=document.getElementById('customIps');if(input)input.placeholder='Cloudflare IPv4、IP:443 或 CIDR；全部在面板内测速，测速后勾选节点保存到订阅，不修改正式 DNS';
 
- let subUrl='',subRules='';
+ let subUrl='',subRules='',savingMeasuredSubscription=false;
+ async function saveSelectedSubscription(button){const ips=Array.from(document.querySelectorAll('#testTableBody .test-row')).filter(tr=>tr.querySelector('input[type=checkbox]')?.checked&&tr.dataset.verified==='true').map(tr=>tr.querySelector('.ip-text').textContent);return saveMeasuredSubscription(ips,button);}
+ async function saveMeasuredSubscription(ips,button,append=false){
+  if(busy)return notify('请等待测速和临时解析清理结束后再保存。');
+  if(savingMeasuredSubscription)return;
+  if(!ips.length||ips.some(ip=>!verified.has(ip)))return notify('请勾选本次测速通过的候选节点。');
+  savingMeasuredSubscription=true;const label=button?.textContent;if(button){button.disabled=true;button.textContent='保存中…';}
+  try{if(!await subscriptionAction(false))throw Error('无法读取订阅配置，未修改原节点。');const selected=ips.map(ip=>ip+':443');const previous=append?document.getElementById('rexSubList').value.split(/\r?\n/).filter(Boolean):[];const list=[...new Set([...previous,...selected])];document.getElementById('rexSubList').value=list.join('\n');if(!await subscriptionAction(true))return;notify('已将 '+list.length+' 个节点保存到订阅，请在 Surge 更新订阅。正式 DNS 未修改。');}
+  catch(e){notify(e.message);}
+  finally{savingMeasuredSubscription=false;if(button){button.disabled=false;button.textContent=label;}}
+ }
  async function subscriptionAction(save){const output=document.getElementById('rexSubStatus');try{
  const body=save==='environment'?{useEnvironment:true}:save?{list:document.getElementById('rexSubList').value,mode:document.getElementById('rexSubMode').value,relay:document.getElementById('rexSubRelay').value}:undefined;
  const j=await json('/api/emby-subscription',body);if(!j.success)throw Error(j.error||'订阅请求失败');subUrl=j.subscriptionUrl;subRules=j.rules;
@@ -387,7 +394,7 @@ export const panelProbeScript = String.raw`<script data-rex-entry-check="measure
  output.textContent=save?'已保存，请在 Surge 更新订阅。':'';return true;
  }catch(e){document.getElementById('rexSubConnection').textContent=' · 暂时无法读取';output.textContent=e.message;return false;}}
  const subLoad=document.getElementById('rexSubLoad');if(subLoad){subLoad.onclick=()=>subscriptionAction(false);document.getElementById('rexSubSave').onclick=()=>subscriptionAction(true);document.getElementById('rexSubUseEnvironment').onclick=()=>subscriptionAction('environment');
- document.getElementById('rexSubSelected').onclick=()=>{const rows=Array.from(document.querySelectorAll('#testTableBody .test-row')).filter(tr=>tr.querySelector('input[type=checkbox]')?.checked&&tr.dataset.verified==='true');if(!rows.length)return notify('请勾选本次测速成功的候选');document.getElementById('rexSubList').value=rows.map(tr=>tr.querySelector('.ip-text').textContent+':443').join('\n');};
+ document.getElementById('rexSubSelected').onclick=()=>saveSelectedSubscription(document.getElementById('rexSubSelected'));
  async function copySubscription(rules){if(!subUrl&&!await subscriptionAction(false))return;const text=rules?subRules:subUrl;try{await navigator.clipboard.writeText(text);document.getElementById('rexSubStatus').textContent=(rules?'首次接入配置已复制。':'订阅地址已复制。');}catch{document.getElementById('rexSubStatus').textContent=text;}}
  document.getElementById('rexSubCopy').onclick=()=>copySubscription(false);document.getElementById('rexSubCopyRules').onclick=()=>copySubscription(true);subscriptionAction(false);
  }

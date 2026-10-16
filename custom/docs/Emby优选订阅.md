@@ -77,7 +77,7 @@ DOMAIN,你的Emby反代域名,Emby优选
 
 常用界面仅显示订阅地址、节点列表，以及“复制订阅 / 使用测速结果 / 保存节点”。中转、p/yx、配置来源和连接诊断位于默认折叠的高级设置。首次接入说明独立折叠，后续不用重复复制配置。
 
-用户选择的独立域名为 sub.rex-custom.invalid，归属 preferred-ip-subscription 的 Custom Domain。当前完整订阅链接为 https://sub.rex-custom.invalid/<订阅密钥>，需要从面板复制；裸域名不含认证，不能作为订阅。旧 workers.dev 的 /__emby-sub/<密钥>/surge.list 路径仍可读取同一节点列表。原反代域名、节点 ID、认证密码和数据库保持原有值。
+用户选择的独立域名为 sub.tli.li，归属 preferred-ip-subscription 的 Custom Domain。当前完整订阅链接为 https://sub.tli.li/<订阅密钥>，需要从面板复制；裸域名不含认证，不能作为订阅。旧 workers.dev 的 /__emby-sub/<密钥>/surge.list 路径仍可读取同一节点列表。原反代域名、节点 ID、认证密码和数据库保持原有值。
 
 Surge 外部资源中的 POLICY-GROUP 下载的是代理节点列表。首次将远程地址加入 Emby 策略组，并设置 Emby 域名使用该组后，日常只需在外部资源中更新；本功能不改用户现有 Surge 文件。参考 https://manual.nssurge.com/policy-groups/policy-including.html 。
 
@@ -96,3 +96,9 @@ rex.tli.li 保留原 emby-proxy 路由。正式 DNS 已从固定优选 IP 的灰
 以后测速结果仅保存到订阅。唯一解析、提交选中至 DNS、更新 TOP3 至 DNS 属于旧的全局 DNS 优选功能，会重新固定正式域名 IP，不适用于本模式。测速本身不改正式 DNS。
 
 原记录及路由备份在私有 backups/default-entry-*/before.json。回滚仅恢复 rex.tli.li 该条 A 记录，不修改其他 DNS、订阅或全局分流。
+
+### 面板仅保存订阅（2026-10-16）
+
+面板移除了更新 TOP3 至 DNS、直推 CNAME 和提交选中至 DNS。主操作为「保存选中到订阅」：以已勾选且本次测速通过的节点替换订阅入口列表，保留已保存的中转方式与固定 ProxyIP。单节点操作「加入订阅」追加该节点并去重。保存完在 Surge 更新订阅即可；它不改变客户端当前策略选择。
+
+正式 DNS 写入接口已停用，旧页面或缓存脚本也不能覆盖默认橙云解析。DNS 读取、临时测速解析的创建和清理继续工作。保存失败会显示错误，不报告成功；没有通过验证的节点不能通过测速保存按钮提交。手工节点列表仍可编辑后保存。

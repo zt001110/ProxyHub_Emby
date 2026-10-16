@@ -29,6 +29,7 @@ function isCloudflareIPv4(ip) {
 }
 function dnsResult(data) { return Response.json(data, { headers: { 'Cache-Control': 'no-store' } }); }
 async function entryDns(request, env) {
+  if (request.method === 'POST') return dnsResult({ success: false, writeEnabled: false, error: '正式 DNS 已锁定为默认 Cloudflare 入口；请将测速结果保存到优选订阅。' });
   if (env.CF_DOMAIN !== entryDnsName) return dnsResult({ success: false, error: 'DNS 管理域名尚未配置为优选入口。' });
   const token = env.CF_DNS_API_TOKEN;
   // Read public DNS without giving the Worker persistent write access.
@@ -63,7 +64,7 @@ async function entryDns(request, env) {
     }
     const records = await api('?name=' + encodeURIComponent(entryDnsName));
     if (!Array.isArray(records) || records.some(row => row.name !== entryDnsName)) throw new Error('DNS 查询范围不符，操作已停止。');
-    if (request.method === 'GET') return dnsResult({ success: true, result: records, writeEnabled: true, source: 'cloudflare-api' });
+    if (request.method === 'GET') return dnsResult({ success: true, result: records, writeEnabled: false, source: 'cloudflare-api' });
     // One provider transaction avoids deleting the working record before a
     // replacement is accepted. Preserve TXT/MX and every other hostname.
     const addressRecords = records.filter(row => ['A', 'AAAA', 'CNAME'].includes(row.type));
@@ -573,10 +574,12 @@ export default {
     const headers = new Headers(response.headers);
     headers.delete('content-length');
     headers.set('Cache-Control', 'no-store');
-    const dnsExplanation = '<div style="color:#94a3b8;font-size:13px;line-height:1.7;margin-bottom:12px"><p>所有测试直接在本面板完成。当前入口与候选使用同一套完整下载测速，逐步显示已下载量、百分比和速度。辅助解析临时创建并在测完清理；正式 DNS 仅手动提交。</p><details><summary style="cursor:pointer">测速口径与清理说明</summary><p>响应为 3 次热连接请求的中位数；下载使用 4 MiB，快链路追加 8 MiB，速度不含建连和首包等待。测速反映当前浏览器网络路径；网页不能强制绕过系统代理，需由用户的分流规则保证直连，不等同 ICMP Ping 或视频源站带宽。CIDR 每网段抽样 4 个，最多 512 个候选，单批测试最多 100 个。当前入口固定首行，候选按通过、失败、跳过分组；通过项速度优先，同速时响应低优先。关闭页面或断网时，临时解析在 10 分钟到期后由每 5 分钟的清理任务重试回收。多条正式 DNS 不会自动按运营商选路，自动优选关闭。</p></details></div>';
+    const dnsExplanation = '<div style="color:#94a3b8;font-size:13px;line-height:1.7;margin-bottom:12px"><p>所有测试直接在本面板完成。当前入口与候选使用同一套完整下载测速，逐步显示已下载量、百分比和速度。辅助解析临时创建并在测完清理；测速结果仅保存到订阅，不修改正式 DNS。</p><details><summary style="cursor:pointer">测速口径与清理说明</summary><p>响应为 3 次热连接请求的中位数；下载使用 4 MiB，快链路追加 8 MiB，速度不含建连和首包等待。测速反映当前浏览器网络路径；网页不能强制绕过系统代理，需由用户的分流规则保证直连，不等同 ICMP Ping 或视频源站带宽。CIDR 每网段抽样 4 个，最多 512 个候选，单批测试最多 100 个。当前入口固定首行，候选按通过、失败、跳过分组；通过项速度优先，同速时响应低优先。关闭页面或断网时，临时解析在 10 分钟到期后由每 5 分钟的清理任务重试回收。直连使用默认 Cloudflare 入口；订阅节点仅在客户端选中后生效。</p></details></div>';
 
     const trafficExplanation = '<p style="color:#94a3b8;font-size:13px;line-height:1.7">客户端下载流量：按线路汇总所有客户端收到的下行量，排除回源、面板和测速；按北京时间统计。Cloudflare 数据可能延迟或采样，不等同于设备或运营商账单的精确流量。外部直连下载无法统计。</p>';
     const adapted = html.replace(originalEntryUrl, customEntryUrl)
+      .replace(/<button\b[^>]*id="(?:btnTop3Dns|btnDirectCname)"[^>]*>[\s\S]*?<\/button>/g, '')
+      .replace(/<button\b[^>]*id="btnSelectedDns"[^>]*>[\s\S]*?<\/button>/, '<button class="btn-submit" id="btnSelectedDns" type="button">保存选中到订阅</button>')
       .replace('预估延迟', '热连接响应')
       .replace('连通状态', '下载速度 / 测试状态')
       .replace('CF Worker 每日免费请求额度', '账号 Worker 每日请求量')
