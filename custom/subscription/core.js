@@ -1,7 +1,7 @@
 // Emby-only preferred subscription transport.
 const embyTunnelFailures=new Map();
 // Emby-only Trojan WebSocket transport. No general proxy, UDP or fallback path.
-export function decodeEmbyTrojanHeader(bytes,passwordHash,target){
+export function decodeEmbyTrojanRequest(bytes,passwordHash,target,probeHost){
  if(bytes.length<61)return null;
  const expected=new TextEncoder().encode(passwordHash);
  let mismatch=expected.length!==56?1:0;for(let i=0;i<56;i++)mismatch|=bytes[i]^(expected[i]||0);
@@ -9,23 +9,38 @@ export function decodeEmbyTrojanHeader(bytes,passwordHash,target){
  const length=bytes[60],end=61+length+4;if(bytes.length<end)return null;
  const host=new TextDecoder().decode(bytes.subarray(61,61+length)).toLowerCase().replace(/\.$/,'');
  const port=(bytes[61+length]<<8)|bytes[62+length];
- if(host!==target.toLowerCase()||port!==443||bytes[63+length]!==13||bytes[64+length]!==10)throw Error('Rejected');
- return bytes.subarray(end);
+ if(bytes[63+length]!==13||bytes[64+length]!==10)throw Error('Rejected');
+ const probe=!!probeHost&&host===probeHost.toLowerCase()&&port===80;
+ if(!probe&&(host!==target.toLowerCase()||port!==443))throw Error('Rejected');
+ return {probe,payload:bytes.subarray(end)};
+}
+export function decodeEmbyTrojanHeader(bytes,passwordHash,target){const decoded=decodeEmbyTrojanRequest(bytes,passwordHash,target);return decoded===null?null:decoded.payload;}
+// This probe terminates inside the authenticated tunnel. It never opens an outbound socket.
+export function latencyProbeResponse(bytes,probeHost){
+ if(bytes.length>4096)throw Error('Probe header too large');
+ const text=new TextDecoder().decode(bytes);if(!text.includes('\r\n\r\n'))return null;
+ const lines=text.split('\r\n');
+ if(!/^(HEAD|GET) \/__emby-sub\/latency HTTP\/1\.[01]$/.test(lines[0]))throw Error('Rejected probe request');
+ const hosts=lines.filter(line=>/^host:/i.test(line));if(hosts.length!==1||hosts[0].slice(5).trim().toLowerCase().replace(/:80$/,'')!==probeHost.toLowerCase())throw Error('Rejected probe host');
+ return new TextEncoder().encode('HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n');
 }
 async function embyTrojanTunnel(request,env){
 
  const relay=new URL(request.url).searchParams.get('p')?.match(/^([a-z0-9.-]+):(\d+)$/);if(!relay)return new Response('Not configured',{status:503});
  const pair=new WebSocketPair(),client=pair[0],server=pair[1];server.accept();server.binaryType='arraybuffer';
- let socket,writer,closed=false,header=new Uint8Array(),pending=0,chain=Promise.resolve(),ready=false;
+ let socket,writer,closed=false,header=new Uint8Array(),pending=0,chain=Promise.resolve(),ready=false,probeMode=false,probeHeader=new Uint8Array();
  const close=(error)=>{if(closed)return;closed=true;if(error instanceof Error){const id=new URL(request.url).pathname.split('/').pop();embyTunnelFailures.set(id,{at:new Date().toISOString(),reason:error.message.slice(0,180)});if(embyTunnelFailures.size>32)embyTunnelFailures.delete(embyTunnelFailures.keys().next().value);}clearTimeout(timer);try{server.close(error instanceof Error?1011:1000,error instanceof Error?error.message.replace(/[^\x20-\x7e]/g,'').slice(0,100):'closed')}catch{}try{writer?.releaseLock()}catch{}try{socket?.close()}catch{}};
  const timer=setTimeout(close,12000);
+ function receiveProbe(bytes){const merged=new Uint8Array(probeHeader.length+bytes.length);merged.set(probeHeader);merged.set(bytes,probeHeader.length);probeHeader=merged;const response=latencyProbeResponse(probeHeader,env.TUNNEL_DOMAIN||env.CF_DOMAIN);if(response){server.send(response);close();}}
  async function receive(data){
   if(closed)return;
   const bytes=new Uint8Array(data);
+  if(probeMode){receiveProbe(bytes);return;}
   if(ready){await writer.write(bytes);return;}
   if(header.length+bytes.length>131072)throw Error('Header too large');
   const merged=new Uint8Array(header.length+bytes.length);merged.set(header);merged.set(bytes,header.length);header=merged;
-  const payload=decodeEmbyTrojanHeader(header,env.EMBY_TROJAN_HASH,env.CF_DOMAIN);if(payload===null)return;
+  const decoded=decodeEmbyTrojanRequest(header,env.EMBY_TROJAN_HASH,env.CF_DOMAIN,env.TUNNEL_DOMAIN||env.CF_DOMAIN);if(decoded===null)return;
+  const payload=decoded.payload;if(decoded.probe){probeMode=true;header=new Uint8Array();receiveProbe(payload);return;}
   socket=env.SOCKET_CONNECT({hostname:relay[1],port:Number(relay[2])});
   let connectTimer;try{await Promise.race([socket.opened,new Promise((_,reject)=>{connectTimer=setTimeout(()=>reject(Error('Connect timeout')),8000)})]);}finally{clearTimeout(connectTimer);}
   if(closed){socket.close();return;}writer=socket.writable.getWriter();ready=true;header=new Uint8Array();if(payload.length)await writer.write(payload);
@@ -58,7 +73,7 @@ async function environmentConfig(env){
  return {nodes,relay:relay.length?relay[0].host+':'+relay[0].port:'',mode:relay.length?'relay':'matched',source:'environment'};
 }
 async function load(env){const row=await env.DB.prepare('SELECT value FROM app_config WHERE key=?').bind(KEY).first();return row?{...JSON.parse(row.value),source:'panel'}:environmentConfig(env);}
-export function policies(nodes,env){return nodes.map((n,i)=>`Emby优选${String(i+1).padStart(2,'0')} = trojan, ${n.host}, ${n.port}, password=${env.TROJAN_PASSWORD}, sni=${env.TUNNEL_DOMAIN||env.CF_DOMAIN}, ws=true, ws-path=/__emby-sub/ws/${n.id}, ws-headers=Host:${env.TUNNEL_DOMAIN||env.CF_DOMAIN}, skip-cert-verify=false, udp-relay=false`).join('\n')+'\n';}
+export function policies(nodes,env){return nodes.map((n,i)=>`Emby优选${String(i+1).padStart(2,'0')} = trojan, ${n.host}, ${n.port}, password=${env.TROJAN_PASSWORD}, sni=${env.TUNNEL_DOMAIN||env.CF_DOMAIN}, ws=true, ws-path=/__emby-sub/ws/${n.id}, ws-headers=Host:${env.TUNNEL_DOMAIN||env.CF_DOMAIN}, skip-cert-verify=false, udp-relay=false, test-url=http://${env.TUNNEL_DOMAIN||env.CF_DOMAIN}/__emby-sub/latency`).join('\n')+'\n';}
 export async function serveEmbySubscription(request,env,ctx){
  env={...env,SUB_TOKEN:env.EMBY_SUB_TOKEN,TROJAN_PASSWORD:env.EMBY_TROJAN_PASSWORD};
  try{
