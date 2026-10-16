@@ -22,16 +22,16 @@ export function latencyProbeResponse(bytes,probeHost){
  const lines=text.split('\r\n');
  if(!/^(HEAD|GET) \/__emby-sub\/latency HTTP\/1\.[01]$/.test(lines[0]))throw Error('Rejected probe request');
  const hosts=lines.filter(line=>/^host:/i.test(line));if(hosts.length!==1||hosts[0].slice(5).trim().toLowerCase().replace(/:80$/,'')!==probeHost.toLowerCase())throw Error('Rejected probe host');
- return new TextEncoder().encode('HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n');
+ return new TextEncoder().encode('HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nCache-Control: no-store\r\nConnection: keep-alive\r\nKeep-Alive: timeout=10, max=16\r\n\r\n');
 }
 async function embyTrojanTunnel(request,env){
 
  const relay=new URL(request.url).searchParams.get('p')?.match(/^([a-z0-9.-]+):(\d+)$/);if(!relay)return new Response('Not configured',{status:503});
  const pair=new WebSocketPair(),client=pair[0],server=pair[1];server.accept();server.binaryType='arraybuffer';
- let socket,writer,closed=false,header=new Uint8Array(),pending=0,chain=Promise.resolve(),ready=false,probeMode=false,probeHeader=new Uint8Array();
+ let socket,writer,closed=false,header=new Uint8Array(),pending=0,chain=Promise.resolve(),ready=false,probeMode=false,probeHeader=new Uint8Array(),probeRequests=0;
  const close=(error)=>{if(closed)return;closed=true;if(error instanceof Error){const id=new URL(request.url).pathname.split('/').pop();embyTunnelFailures.set(id,{at:new Date().toISOString(),reason:error.message.slice(0,180)});if(embyTunnelFailures.size>32)embyTunnelFailures.delete(embyTunnelFailures.keys().next().value);}clearTimeout(timer);try{server.close(error instanceof Error?1011:1000,error instanceof Error?error.message.replace(/[^\x20-\x7e]/g,'').slice(0,100):'closed')}catch{}try{writer?.releaseLock()}catch{}try{socket?.close()}catch{}};
  const timer=setTimeout(close,12000);
- function receiveProbe(bytes){const merged=new Uint8Array(probeHeader.length+bytes.length);merged.set(probeHeader);merged.set(bytes,probeHeader.length);probeHeader=merged;const response=latencyProbeResponse(probeHeader,env.TUNNEL_DOMAIN||env.CF_DOMAIN);if(response){server.send(response);close();}}
+ function receiveProbe(bytes){const merged=new Uint8Array(probeHeader.length+bytes.length);merged.set(probeHeader);merged.set(bytes,probeHeader.length);probeHeader=merged;if(probeHeader.length>4096)throw Error('Probe header too large');while(probeHeader.length){const text=new TextDecoder().decode(probeHeader),end=text.indexOf('\r\n\r\n');if(end<0)return;const used=end+4,response=latencyProbeResponse(probeHeader.subarray(0,used),env.TUNNEL_DOMAIN||env.CF_DOMAIN);probeHeader=probeHeader.subarray(used);server.send(response);if(++probeRequests>=16){close();return;}}}
  async function receive(data){
   if(closed)return;
   const bytes=new Uint8Array(data);
