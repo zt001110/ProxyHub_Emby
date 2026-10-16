@@ -58,7 +58,7 @@ async function environmentConfig(env){
  return {nodes,relay:relay.length?relay[0].host+':'+relay[0].port:'',mode:relay.length?'relay':'matched',source:'environment'};
 }
 async function load(env){const row=await env.DB.prepare('SELECT value FROM app_config WHERE key=?').bind(KEY).first();return row?{...JSON.parse(row.value),source:'panel'}:environmentConfig(env);}
-export function policies(nodes,env){return nodes.map((n,i)=>`Emby优选${String(i+1).padStart(2,'0')} = trojan, ${n.host}, ${n.port}, password=${env.TROJAN_PASSWORD}, sni=${env.TUNNEL_DOMAIN||env.CF_DOMAIN}, ws=true, ws-path=/__emby-sub/ws/${n.id}, ws-headers=Host:${env.TUNNEL_DOMAIN||env.CF_DOMAIN}, skip-cert-verify=false, udp-relay=false, test-url=https://${env.CF_DOMAIN}/assets/regions/us.svg`).join('\n')+'\n';}
+export function policies(nodes,env){return nodes.map((n,i)=>`Emby优选${String(i+1).padStart(2,'0')} = trojan, ${n.host}, ${n.port}, password=${env.TROJAN_PASSWORD}, sni=${env.TUNNEL_DOMAIN||env.CF_DOMAIN}, ws=true, ws-path=/__emby-sub/ws/${n.id}, ws-headers=Host:${env.TUNNEL_DOMAIN||env.CF_DOMAIN}, skip-cert-verify=false, udp-relay=false`).join('\n')+'\n';}
 export async function serveEmbySubscription(request,env,ctx){
  env={...env,SUB_TOKEN:env.EMBY_SUB_TOKEN,TROJAN_PASSWORD:env.EMBY_TROJAN_PASSWORD};
  try{

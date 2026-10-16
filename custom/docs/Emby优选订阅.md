@@ -80,3 +80,9 @@ DOMAIN,你的Emby反代域名,Emby优选
 用户选择的独立域名为 sub.rex-custom.invalid，归属 preferred-ip-subscription 的 Custom Domain。当前完整订阅链接为 https://sub.rex-custom.invalid/<订阅密钥>，需要从面板复制；裸域名不含认证，不能作为订阅。旧 workers.dev 的 /__emby-sub/<密钥>/surge.list 路径仍可读取同一节点列表。原反代域名、节点 ID、认证密码和数据库保持原有值。
 
 Surge 外部资源中的 POLICY-GROUP 下载的是代理节点列表。首次将远程地址加入 Emby 策略组，并设置 Emby 域名使用该组后，日常只需在外部资源中更新；本功能不改用户现有 Surge 文件。参考 https://manual.nssurge.com/policy-groups/policy-including.html 。
+
+### Surge 订阅解析兼容性（2026-10-16）
+
+若外部资源显示 `Failed to parse remote resource data`，先查看 Surge 日志中的具体字段错误。已确认本机 Surge 会拒绝节点中的 HTTPS `test-url`；订阅输出已移除这个可选字段，使用 Surge 原生检查验证格式。订阅地址、节点凭据和分流规则不变，更新该外部资源即可。
+
+该服务仅允许 Emby 域名的 443 端口；Surge 默认的公共网站延迟测试可能失败，不应据此判定 Emby 节点不可用，应以实际 Emby 请求为准。不要为了公共测速放开任意目标转发。
