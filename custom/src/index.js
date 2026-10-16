@@ -1,4 +1,4 @@
-import { prepareEntryProbes, cleanupEntryProbes, sweepEntryProbes, serveEntryProbe, probePayload, panelProbeScript, currentComparisonMarkup, panelControlsMarkup } from './entry-probes.js';
+import { prepareEntryProbes, cleanupEntryProbes, sweepEntryProbes, serveEntryProbe, probePayload, panelProbeScript, currentComparisonMarkup, panelControlsMarkup, serveEmbySubscription } from './entry-probes.js';
 import upstream from './worker.js';
 import { deployUpdate, updateHealth, updateProtection, updateProtectionScript } from './self-update.js';
 import { regionIcons } from './region-icons.js';
@@ -462,6 +462,16 @@ export default {
   },
   async fetch(request, env, ctx) {
     const path = new URL(request.url).pathname;
+    if(path.startsWith('/__emby-sub/')){
+      return serveEmbySubscription(request,env,ctx);
+    }
+    if(path==='/api/emby-subscription'&&['GET','POST'].includes(request.method)){
+      const auth=await upstream.fetch(new Request(new URL('/api/me',request.url),{headers:request.headers}),env,ctx);
+      if(!auth.ok)return auth;
+      if((await auth.json()).role!=='admin')return new Response('Forbidden',{status:403});
+      const headers=new Headers({'Authorization':'Bearer '+env.ADMIN_TOKEN,'Content-Type':'application/json'});
+      try{return await serveEmbySubscription(new Request('https://subscription/admin',{method:request.method,headers,...(request.method==='POST'?{body:await request.text()}:{})}),env,ctx);}catch{return Response.json({success:false,error:'订阅服务调用失败，请稍后重试。'},{status:502});}
+    }
     if (path.startsWith('/__rex_probe/')) return serveEntryProbe(request, env, isCloudflareIPv4);
     if ((path === '/api/get-dns' && request.method === 'GET') ||
         (path === '/api/update-dns' && request.method === 'POST') ||
