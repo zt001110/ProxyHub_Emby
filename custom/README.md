@@ -59,7 +59,7 @@ npm run update:protected
 
 若修改了 `custom/src/index.js`、测速模块、机器人逻辑、更新器或检查器，核心更新接口会刻意保留线上旧适配器，所以不能用它发布这些修改。应先完成针对性测试与代码/配置备份，再用 Wrangler 维护部署（主服务 `npm run deploy`，检查器 `npm run deploy:guard`）。这些维护部署不经过网页自动备份，因此不得省略手动备份和回滚点。
 
-Cloudflare 编辑 Token、DNS Token、Telegram Token 仍仅存 Cloudflare。自动更新的独立 production-automatic 环境保存面板发布认证与基准指纹，只交给可信发布控制器；整合与测试任务没有生产凭据。普通 CI 和手动同步不部署。详见 [全自动更新与故障处理](docs/全自动更新与故障处理.md)。
+Cloudflare 编辑 Token、DNS Token、Telegram Token 仍仅存 Cloudflare。手动 GitHub 维护工具的独立 production-automatic 环境保存面板发布认证与基准指纹，只交给可信发布控制器；整合与测试任务没有生产凭据。普通 CI 和手动同步不部署。详见 [全自动更新与故障处理](docs/全自动更新与故障处理.md)。
 
 ## 文件定位
 
@@ -74,3 +74,5 @@ Cloudflare 编辑 Token、DNS Token、Telegram Token 仍仅存 Cloudflare。自�
 | 还原私有发布目录 | `scripts/materialize-site.mjs` |
 | 受保护作者更新 | `scripts/update-panel.mjs` |
 | 备份导出及修复说明 | `scripts/export-update-backup.mjs`、`docs/更新保护与故障修复.md` |
+
+日常以面板为准：打开面板检查作者更新，点击更新后才执行自动备份、发布、检查与失败回滚。每小时任务已取消；保留的 GitHub 维护 workflow 只有手动触发入口，面板按钮不启动 GitHub CI 或同步 fork。独立保护器 Cron 仅接续已提交的更新/恢复。

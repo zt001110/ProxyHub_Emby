@@ -1,7 +1,5 @@
-name: Automatic protected upstream update
+name: Protected upstream maintenance (manual)
 on:
-  schedule:
-    - cron: '17 * * * *'
   workflow_dispatch:
     inputs:
       validate_current:
