@@ -59,7 +59,7 @@ npm run update:protected
 
 若修改了 `custom/src/index.js`、测速模块、机器人逻辑、更新器或检查器，核心更新接口会刻意保留线上旧适配器，所以不能用它发布这些修改。应先完成针对性测试与代码/配置备份，再用 Wrangler 维护部署（主服务 `npm run deploy`，检查器 `npm run deploy:guard`）。这些维护部署不经过网页自动备份，因此不得省略手动备份和回滚点。
 
-生产 Secret 仅存 Cloudflare；GitHub Actions 无生产 Secret、无部署权限。普通同步与 CI 都不会改 DNS、发送 Telegram 消息或更新生产代码。
+Cloudflare 编辑 Token、DNS Token、Telegram Token 仍仅存 Cloudflare。自动更新的独立 production-automatic 环境保存面板发布认证与基准指纹，只交给可信发布控制器；整合与测试任务没有生产凭据。普通 CI 和手动同步不部署。详见 [全自动更新与故障处理](docs/全自动更新与故障处理.md)。
 
 ## 文件定位
 

@@ -1,0 +1,159 @@
+name: Automatic protected upstream update
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      validate_current:
+        description: Run full tests even when upstream has no new commit
+        type: boolean
+        default: false
+      retry_blocked:
+        description: Retry an upstream revision previously stopped after inspection
+        type: boolean
+        default: false
+      exercise_deployment:
+        description: Explicitly exercise the protected release using current core when no upstream update exists
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  issues: read
+concurrency:
+  group: rex-production-upstream-update
+  cancel-in-progress: false
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      hasUpdate: ${{ steps.plan.outputs.hasUpdate }}
+      blocked: ${{ steps.plan.outputs.blocked }}
+      latest: ${{ steps.plan.outputs.latest }}
+      base: ${{ steps.plan.outputs.base }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '25'
+      - name: Plan and integrate upstream without production secrets
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REX_ARTIFACT_DIR: ${{ runner.temp }}/automatic-artifact
+          REX_RETRY_BLOCKED: ${{ inputs.retry_blocked || false }}
+          REX_EXERCISE_DEPLOYMENT: ${{ inputs.exercise_deployment || false }}
+        run: node custom/scripts/automatic-integration.mjs
+      - name: Install trusted customization dependencies and run compatibility suite
+        if: steps.plan.outputs.blocked != 'true' && (steps.plan.outputs.hasUpdate == 'true' || inputs.validate_current || inputs.exercise_deployment)
+        working-directory: custom
+        run: |
+          npm ci
+          npm test
+          npm run check:public
+      - name: Package validated source and integration history
+        if: steps.plan.outputs.blocked != 'true'
+        env:
+          REX_ARTIFACT_DIR: ${{ runner.temp }}/automatic-artifact
+          HAS_UPDATE: ${{ steps.plan.outputs.hasUpdate }}
+        run: |
+          cp worker.js "$REX_ARTIFACT_DIR/worker.js"
+          if [ "$HAS_UPDATE" = true ]; then
+            git bundle create "$REX_ARTIFACT_DIR/candidate.bundle" refs/heads/codex/automatic-candidate
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: automatic-candidate
+          path: ${{ runner.temp }}/automatic-artifact/
+          if-no-files-found: ignore
+          retention-days: 30
+  deploy:
+    needs: integrate
+    if: needs.integrate.outputs.blocked != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production-automatic
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '25'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: automatic-candidate
+          path: automatic-artifact
+      - name: Refuse a stale workflow before touching production
+        env:
+          EXPECTED_BASE: ${{ needs.integrate.outputs.base }}
+        run: |
+          test "$(git ls-remote origin refs/heads/codex/rex-custom | cut -f1)" = "$EXPECTED_BASE"
+      - name: Protected update or live baseline check using trusted controller only
+        env:
+          REX_PANEL_ORIGIN: ${{ secrets.REX_PANEL_ORIGIN }}
+          REX_PANEL_ADMIN: ${{ secrets.REX_PANEL_ADMIN }}
+          REX_EXPECTED_ADAPTER: ${{ secrets.REX_EXPECTED_ADAPTER }}
+        run: node custom/scripts/automatic-deploy.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: automatic-protection-report
+          path: automatic-report.json
+          if-no-files-found: ignore
+          retention-days: 90
+  publish:
+    needs: [integrate, deploy]
+    if: needs.integrate.outputs.hasUpdate == 'true' && needs.integrate.outputs.blocked != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '25'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: automatic-candidate
+          path: automatic-artifact
+      - name: Publish validated history without running candidate code
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node custom/scripts/automatic-publish.mjs
+  record-failure:
+    needs: [integrate, deploy, publish]
+    if: always() && (needs.integrate.result == 'failure' || needs.deploy.result == 'failure' || needs.publish.result == 'failure')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Record failure once and block unattended retries for this revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REVISION: ${{ needs.integrate.outputs.latest || github.sha }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PHASES: integration=${{ needs.integrate.result }}, deploy=${{ needs.deploy.result }}, publish=${{ needs.publish.result }}
+        run: |
+          node --input-type=module <<'JS'
+          import {execFileSync} from 'node:child_process';
+          const title='Automatic update blocked: '+process.env.REVISION;
+          const issues=JSON.parse(execFileSync('gh',['api','repos/'+process.env.GH_REPO+'/issues?state=open&per_page=100'],{encoding:'utf8'}));
+          if(!issues.some(i=>i.title===title))execFileSync('gh',['api','repos/'+process.env.GH_REPO+'/issues','--method','POST','--input','-'],{input:JSON.stringify({title,body:'Automatic processing stopped. '+process.env.PHASES+'\n\n[Workflow logs and sanitized artifacts]('+process.env.RUN_URL+')\n\nInspect the panel protection record before retrying. Deployment may have rolled back or may still be recovering under the independent guard. Fix the cause, then dispatch with retry_blocked=true. Do not blindly resubmit.\n\nRepair guide: custom/docs/全自动更新与故障处理.md'}),stdio:['pipe','ignore','pipe']});
+          JS

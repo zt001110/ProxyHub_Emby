@@ -5,7 +5,7 @@
     "predeploy": "node scripts/prepare-upstream.mjs && node scripts/check-deploy-version.mjs && node scripts/prepare-update.mjs",
     "deploy": "wrangler deploy",
     "dev": "node scripts/prepare-upstream.mjs && node scripts/prepare-update.mjs && wrangler dev",
-    "test": "node scripts/prepare-upstream.mjs && node scripts/prepare-update.mjs && node scripts/test-update.mjs && node scripts/test-update-guard.mjs && node scripts/test-update-health.mjs && node scripts/test-bandwidth.mjs && node scripts/test-telegram.mjs && node scripts/test-dns.mjs && node scripts/test-entry-probes.mjs && node scripts/test-panel-speedtest.mjs && node scripts/test-probe-readiness.mjs && node scripts/test-playback-timing.mjs && node scripts/test-origin-observer.mjs && node scripts/test-cf-usage.mjs && node scripts/test-bot-menu.mjs && node scripts/test-maintenance.mjs",
+    "test": "node scripts/prepare-upstream.mjs && node scripts/prepare-update.mjs && node scripts/test-update.mjs && node scripts/test-update-guard.mjs && node scripts/test-update-health.mjs && node scripts/test-bandwidth.mjs && node scripts/test-telegram.mjs && node scripts/test-dns.mjs && node scripts/test-entry-probes.mjs && node scripts/test-panel-speedtest.mjs && node scripts/test-probe-readiness.mjs && node scripts/test-playback-timing.mjs && node scripts/test-origin-observer.mjs && node scripts/test-cf-usage.mjs && node scripts/test-bot-menu.mjs && node scripts/test-maintenance.mjs && node scripts/test-automatic-update.mjs",
     "logs": "wrangler tail",
     "deploy:guard": "wrangler deploy --config update-guard/wrangler.jsonc",
     "prepare": "node scripts/prepare-upstream.mjs && node scripts/prepare-update.mjs",

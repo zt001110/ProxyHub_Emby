@@ -1,0 +1,20 @@
+// This job has repository write permission but no deployment credentials.
+import {execFileSync} from 'node:child_process';
+import {readFileSync} from 'node:fs';
+import {resolve} from 'node:path';
+import {createHash} from 'node:crypto';
+import {validateChanges} from './automatic-integration.mjs';
+const dir=resolve(process.env.REX_ARTIFACT_DIR||'automatic-artifact'),m=JSON.parse(readFileSync(resolve(dir,'manifest.json')));
+const cfg=JSON.parse(readFileSync('custom/maintenance.json'));
+const git=(...a)=>execFileSync('git',a,{encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
+for(const k of ['base','latest','candidate'])if(!/^[a-f0-9]{40}$/.test(m[k]))throw Error('Invalid artifact revision.');
+if(!m.hasUpdate||m.blocked)throw Error('Artifact is not publishable.');
+git('fetch','--no-tags',resolve(dir,'candidate.bundle'),'refs/heads/codex/automatic-candidate');if(git('rev-parse','FETCH_HEAD')!==m.candidate)throw Error('Bundle revision mismatch.');
+git('merge-base','--is-ancestor',m.base,m.candidate);git('merge-base','--is-ancestor',m.latest,m.candidate);
+validateChanges(git('diff','--name-only',m.base,m.candidate).split('\n').filter(p=>p!=='custom/upstream.lock.json'));
+const lock=JSON.parse(git('show',m.candidate+':custom/upstream.lock.json'));
+const bytes=execFileSync('git',['show',m.candidate+':worker.js'],{maxBuffer:8*1024*1024});
+if(lock.commit!==m.latest||lock.version!==m.version||lock.sha256!==m.sha256||createHash('sha256').update(bytes).digest('hex')!==m.sha256)throw Error('Candidate lock/source mismatch.');
+const ref=git('ls-remote','origin','refs/heads/'+cfg.customBranch).split(/\s/)[0];if(ref!==m.base)throw Error('Maintained branch changed during the run; no branch overwritten.');
+git('-c','credential.helper=','-c','credential.helper=!gh auth git-credential','push','--atomic','origin',m.candidate+':refs/heads/'+cfg.customBranch,m.latest+':refs/heads/'+cfg.upstreamBranch);
+console.log('Published tested upstream integration with an atomic fast-forward push.');
